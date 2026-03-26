@@ -286,18 +286,9 @@ export function LivePlayer({
     setHasStarted(true);
   };
 
-  const handleRetry = () => {
-    startedRef.current = true;
-    hasPlayedRef.current = false;
-    setLastErrorMessage(null);
-    setIsStartupLoading(true);
-    setVideoMountKey((current) => current + 1);
-    setHasStarted(true);
-  };
-
   const showManualStartButton = requireManualStart && manualStartReady && !hasStarted;
   const showLoadingOverlay = ((requireManualStart && !manualStartReady) || isStartupLoading) && !hasPlayedRef.current;
-  const showRetryButton = Boolean(lastErrorMessage) && !showLoadingOverlay;
+  const showErrorOverlay = Boolean(lastErrorMessage) && !showLoadingOverlay;
 
   return (
     <div className="player-frame">
@@ -320,13 +311,10 @@ export function LivePlayer({
           <span className="player-overlay-icon">▶</span>
         </button>
       ) : null}
-      {showRetryButton ? (
+      {showErrorOverlay ? (
         <div className="player-loading-overlay">
           <div className="player-loading-content">
-            <div className="player-loading-text">{lastErrorMessage}</div>
-            <button type="button" className="player-overlay-button" onClick={handleRetry} aria-label="다시 시도">
-              <span className="player-overlay-icon">다시 시도</span>
-            </button>
+            <div className="player-loading-text">재생 중 오류가 발생했습니다. 새로고침 후 다시 이용해주세요.</div>
           </div>
         </div>
       ) : null}

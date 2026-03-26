@@ -93,6 +93,7 @@ function buildStatusMeta(playerState: PlaybackState, streamStatus: StreamStatus 
 }
 
 export default function DashboardPage() {
+  const dashboardWarmupSessionKey = "febc-dashboard-admin-warmup-complete";
   const router = useRouter();
   const { user } = useAuth();
   const userId = user?.id ?? null;
@@ -105,7 +106,9 @@ export default function DashboardPage() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewState, setPreviewState] = useState<PlaybackState>({ status: "idle" });
   const [playerRenderKey, setPlayerRenderKey] = useState(0);
+  const [manualStartDelayMs, setManualStartDelayMs] = useState(15000);
   const requestedPreviewAccessRef = useRef(false);
+  const hasLiveSignal = Boolean(streamStatus?.isPublishing || streamStatus?.playbackAvailable);
 
   useEffect(() => {
     if (!user || !userId) return;
@@ -138,6 +141,19 @@ export default function DashboardPage() {
   }, [roleCode, router, user, userId]);
 
   useEffect(() => {
+    if (typeof window === "undefined" || roleCode !== "SUPER_ADMIN") {
+      return;
+    }
+
+    if (window.sessionStorage.getItem(dashboardWarmupSessionKey) === "ready") {
+      setManualStartDelayMs(0);
+      return;
+    }
+
+    setManualStartDelayMs(15000);
+  }, [dashboardWarmupSessionKey, roleCode]);
+
+  useEffect(() => {
     if (!userId || roleCode !== "SUPER_ADMIN") return;
 
     let cancelled = false;
@@ -167,9 +183,32 @@ export default function DashboardPage() {
   }, [roleCode, userId]);
 
   useEffect(() => {
+    if (typeof window === "undefined" || roleCode !== "SUPER_ADMIN") {
+      return;
+    }
+
+    if (streamStatus === null) {
+      return;
+    }
+
+    if (!hasLiveSignal) {
+      window.sessionStorage.removeItem(dashboardWarmupSessionKey);
+      setManualStartDelayMs(15000);
+      return;
+    }
+
+    if (window.sessionStorage.getItem(dashboardWarmupSessionKey) === "ready") {
+      setManualStartDelayMs(0);
+      return;
+    }
+
+    setManualStartDelayMs(15000);
+  }, [dashboardWarmupSessionKey, hasLiveSignal, roleCode, streamStatus]);
+
+  useEffect(() => {
     if (!user || !userId || roleCode !== "SUPER_ADMIN") return;
 
-    if (!streamStatus?.playbackAvailable) {
+    if (!hasLiveSignal) {
       requestedPreviewAccessRef.current = false;
       if (playbackAccess) {
         setPlaybackAccess(null);
@@ -217,7 +256,30 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [playbackAccess, roleCode, streamStatus?.playbackAvailable, user, userId]);
+  }, [hasLiveSignal, playbackAccess, roleCode, user, userId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || roleCode !== "SUPER_ADMIN") {
+      return;
+    }
+
+    if (!hasLiveSignal || !playbackAccess) {
+      return;
+    }
+
+    if (manualStartDelayMs === 0) {
+      window.sessionStorage.setItem(dashboardWarmupSessionKey, "ready");
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      window.sessionStorage.setItem(dashboardWarmupSessionKey, "ready");
+    }, manualStartDelayMs);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [dashboardWarmupSessionKey, hasLiveSignal, manualStartDelayMs, playbackAccess, roleCode]);
 
   const previewMeta = useMemo(() => buildStatusMeta(previewState, streamStatus, previewError), [previewError, previewState, streamStatus]);
 
@@ -225,7 +287,7 @@ export default function DashboardPage() {
     return null;
   }
 
-  const shouldRenderPlayer = Boolean(streamStatus?.playbackAvailable && playbackAccess);
+  const shouldRenderPlayer = Boolean(hasLiveSignal && playbackAccess);
   const previewAccess = shouldRenderPlayer ? playbackAccess : null;
 
   return (
@@ -255,6 +317,8 @@ export default function DashboardPage() {
               watermark={user.watermark}
               controls
               muted={false}
+              requireManualStart
+              manualStartDelayMs={manualStartDelayMs}
               onPlaybackStateChange={setPreviewState}
             />
           ) : (

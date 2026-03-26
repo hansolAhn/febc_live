@@ -184,6 +184,7 @@ function buildAdminStatusMeta(playerState: PlaybackState, streamStatus: StreamSt
 
 export default function LivePage() {
   const branchPlaybackWarmupSessionKey = "febc-live-branch-warmup-complete";
+  const adminPlaybackWarmupSessionKey = "febc-live-admin-warmup-complete";
   const pathname = usePathname();
   const { user } = useAuth();
   const userId = user?.id ?? null;
@@ -203,6 +204,7 @@ export default function LivePage() {
   const playbackAvailable = Boolean(streamStatus?.playbackAvailable);
   const hasLiveSignal = isPublishing || playbackAvailable;
   const [branchManualStartDelayMs, setBranchManualStartDelayMs] = useState(15000);
+  const [adminManualStartDelayMs, setAdminManualStartDelayMs] = useState(15000);
 
   useEffect(() => {
     if (!userId) return;
@@ -239,14 +241,22 @@ export default function LivePage() {
     setPlayerState({ status: "idle" });
     setError(null);
     setShowStoppedNotice(false);
-    if (typeof window !== "undefined" && window.sessionStorage.getItem(branchPlaybackWarmupSessionKey) === "ready") {
-      setBranchManualStartDelayMs(0);
-    } else {
-      setBranchManualStartDelayMs(15000);
+    if (typeof window !== "undefined") {
+      if (window.sessionStorage.getItem(branchPlaybackWarmupSessionKey) === "ready") {
+        setBranchManualStartDelayMs(0);
+      } else {
+        setBranchManualStartDelayMs(15000);
+      }
+
+      if (window.sessionStorage.getItem(adminPlaybackWarmupSessionKey) === "ready") {
+        setAdminManualStartDelayMs(0);
+      } else {
+        setAdminManualStartDelayMs(15000);
+      }
     }
     setPlayerRenderKey((current) => current + 1);
     previousLiveSignalRef.current = false;
-  }, [branchPlaybackWarmupSessionKey, pathname]);
+  }, [adminPlaybackWarmupSessionKey, branchPlaybackWarmupSessionKey, pathname]);
 
   useEffect(() => {
     if (typeof window === "undefined" || isSuperAdmin) {
@@ -270,6 +280,29 @@ export default function LivePage() {
 
     setBranchManualStartDelayMs(15000);
   }, [branchPlaybackWarmupSessionKey, hasLiveSignal, isSuperAdmin, streamStatus]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !isSuperAdmin) {
+      return;
+    }
+
+    if (streamStatus === null) {
+      return;
+    }
+
+    if (!hasLiveSignal) {
+      window.sessionStorage.removeItem(adminPlaybackWarmupSessionKey);
+      setAdminManualStartDelayMs(15000);
+      return;
+    }
+
+    if (window.sessionStorage.getItem(adminPlaybackWarmupSessionKey) === "ready") {
+      setAdminManualStartDelayMs(0);
+      return;
+    }
+
+    setAdminManualStartDelayMs(15000);
+  }, [adminPlaybackWarmupSessionKey, hasLiveSignal, isSuperAdmin, streamStatus]);
 
   useEffect(() => {
     const hadLiveSignal = previousLiveSignalRef.current;
@@ -359,6 +392,35 @@ export default function LivePage() {
   ]);
 
   useEffect(() => {
+    if (typeof window === "undefined" || !isSuperAdmin) {
+      return;
+    }
+
+    if (!hasLiveSignal || !playbackAccess) {
+      return;
+    }
+
+    if (adminManualStartDelayMs === 0) {
+      window.sessionStorage.setItem(adminPlaybackWarmupSessionKey, "ready");
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      window.sessionStorage.setItem(adminPlaybackWarmupSessionKey, "ready");
+    }, adminManualStartDelayMs);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [
+    adminManualStartDelayMs,
+    adminPlaybackWarmupSessionKey,
+    hasLiveSignal,
+    isSuperAdmin,
+    playbackAccess
+  ]);
+
+  useEffect(() => {
     if (playerState.status === "playing") {
       setShowStoppedNotice(false);
     }
@@ -382,7 +444,7 @@ export default function LivePage() {
     return null;
   }
 
-  const shouldRenderAdminPlayer = Boolean(playbackAvailable && playbackAccess);
+  const shouldRenderAdminPlayer = Boolean(hasLiveSignal && playbackAccess);
   const shouldRenderBranchPlayer = Boolean(hasLiveSignal && playbackAccess);
   const resolvedAdminPlaybackAccess = shouldRenderAdminPlayer ? playbackAccess : null;
   const resolvedBranchPlaybackAccess = shouldRenderBranchPlayer ? playbackAccess : null;
@@ -403,14 +465,16 @@ export default function LivePage() {
             </div>
             <div className="stream-status-copy">{statusMeta.message}</div>
             {resolvedAdminPlaybackAccess ? (
-              <LivePlayer
-                key={`live-admin-${playerRenderKey}-${resolvedAdminPlaybackAccess.expiresAt}`}
-                src={resolvedAdminPlaybackAccess.hlsUrl}
-                branchName={user.branchName}
-                username={user.username}
-                watermark={user.watermark}
-                onPlaybackStateChange={setPlayerState}
-              />
+            <LivePlayer
+              key={`live-admin-${playerRenderKey}-${resolvedAdminPlaybackAccess.expiresAt}`}
+              src={resolvedAdminPlaybackAccess.hlsUrl}
+              branchName={user.branchName}
+              username={user.username}
+              watermark={user.watermark}
+              requireManualStart
+              manualStartDelayMs={adminManualStartDelayMs}
+              onPlaybackStateChange={setPlayerState}
+            />
             ) : null}
           </div>
 
