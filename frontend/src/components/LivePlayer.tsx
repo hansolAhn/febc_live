@@ -26,8 +26,6 @@ type LivePlayerProps = {
 };
 
 const HLS_ERROR_MESSAGE = "재생 오류가 발생했습니다. 다시 시도해 주세요.";
-const STARTUP_RETRY_LIMIT = 6;
-const STARTUP_RETRY_DELAY_MS = 1200;
 const STARTUP_STALL_TIMEOUT_MS = 2500;
 
 export function LivePlayer({
@@ -45,8 +43,6 @@ export function LivePlayer({
   const hlsRef = useRef<Hls | null>(null);
   const startedRef = useRef(false);
   const hasPlayedRef = useRef(false);
-  const retryCountRef = useRef(0);
-  const retryTimerRef = useRef<number | null>(null);
   const stallTimerRef = useRef<number | null>(null);
   const attachAttemptRef = useRef(0);
   const manualStartDelayTimerRef = useRef<number | null>(null);
@@ -55,14 +51,15 @@ export function LivePlayer({
   const [manualStartReady, setManualStartReady] = useState(!requireManualStart || manualStartDelayMs <= 0);
   const [isStartupLoading, setIsStartupLoading] = useState(false);
   const [videoMountKey, setVideoMountKey] = useState(0);
+  const [lastErrorMessage, setLastErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     startedRef.current = !requireManualStart;
     hasPlayedRef.current = false;
-    retryCountRef.current = 0;
     setHasStarted(!requireManualStart);
     setManualStartReady(!requireManualStart || manualStartDelayMs <= 0);
     setIsStartupLoading(false);
+    setLastErrorMessage(null);
     setVideoMountKey(0);
   }, [manualStartDelayMs, requireManualStart, src]);
 
@@ -96,13 +93,6 @@ export function LivePlayer({
       onPlaybackStateChange?.(state);
     };
 
-    const clearRetryTimer = () => {
-      if (retryTimerRef.current !== null) {
-        window.clearTimeout(retryTimerRef.current);
-        retryTimerRef.current = null;
-      }
-    };
-
     const clearStallTimer = () => {
       if (stallTimerRef.current !== null) {
         window.clearTimeout(stallTimerRef.current);
@@ -111,7 +101,6 @@ export function LivePlayer({
     };
 
     const cleanup = () => {
-      clearRetryTimer();
       clearStallTimer();
       if (manualStartDelayTimerRef.current !== null) {
         window.clearTimeout(manualStartDelayTimerRef.current);
@@ -130,27 +119,6 @@ export function LivePlayer({
       setIsStartupLoading(false);
     };
 
-    const scheduleRetry = () => {
-      if (!startedRef.current || hasPlayedRef.current) {
-        return;
-      }
-
-      if (retryCountRef.current >= STARTUP_RETRY_LIMIT) {
-        setIsStartupLoading(false);
-        emit({ status: "error", message: HLS_ERROR_MESSAGE });
-        return;
-      }
-
-      retryCountRef.current += 1;
-      setIsStartupLoading(true);
-      emit({ status: "loading" });
-      clearRetryTimer();
-      retryTimerRef.current = window.setTimeout(() => {
-        retryTimerRef.current = null;
-        setVideoMountKey((current) => current + 1);
-      }, STARTUP_RETRY_DELAY_MS);
-    };
-
     const startStallTimer = (attemptId: number) => {
       clearStallTimer();
       stallTimerRef.current = window.setTimeout(() => {
@@ -158,7 +126,9 @@ export function LivePlayer({
           return;
         }
 
-        scheduleRetry();
+        setIsStartupLoading(false);
+        setLastErrorMessage(HLS_ERROR_MESSAGE);
+        emit({ status: "error", message: HLS_ERROR_MESSAGE });
       }, STARTUP_STALL_TIMEOUT_MS);
     };
 
@@ -175,13 +145,15 @@ export function LivePlayer({
           return;
         }
 
-        scheduleRetry();
+        setIsStartupLoading(false);
+        setLastErrorMessage(HLS_ERROR_MESSAGE);
+        emit({ status: "error", message: HLS_ERROR_MESSAGE });
       }
     };
 
     const attachSource = () => {
-      clearRetryTimer();
       clearStallTimer();
+      setLastErrorMessage(null);
 
       if (hlsRef.current) {
         hlsRef.current.destroy();
@@ -235,7 +207,10 @@ export function LivePlayer({
           }
 
           if (data.fatal) {
-            scheduleRetry();
+            clearStallTimer();
+            setIsStartupLoading(false);
+            setLastErrorMessage(HLS_ERROR_MESSAGE);
+            emit({ status: "error", message: HLS_ERROR_MESSAGE });
           }
         });
 
@@ -249,10 +224,9 @@ export function LivePlayer({
 
     const handlePlaying = () => {
       hasPlayedRef.current = true;
-      retryCountRef.current = 0;
-      clearRetryTimer();
       clearStallTimer();
       setIsStartupLoading(false);
+      setLastErrorMessage(null);
       emit({ status: "playing" });
     };
 
@@ -272,11 +246,15 @@ export function LivePlayer({
 
     const handleError = () => {
       if (!hasPlayedRef.current && startedRef.current) {
-        scheduleRetry();
+        clearStallTimer();
+        setIsStartupLoading(false);
+        setLastErrorMessage(HLS_ERROR_MESSAGE);
+        emit({ status: "error", message: HLS_ERROR_MESSAGE });
         return;
       }
 
       setIsStartupLoading(false);
+      setLastErrorMessage(HLS_ERROR_MESSAGE);
       emit({ status: "error", message: HLS_ERROR_MESSAGE });
     };
 
@@ -303,13 +281,23 @@ export function LivePlayer({
 
   const handleManualStart = () => {
     startedRef.current = true;
-    retryCountRef.current = 0;
+    setLastErrorMessage(null);
+    setVideoMountKey((current) => current + 1);
+    setHasStarted(true);
+  };
+
+  const handleRetry = () => {
+    startedRef.current = true;
+    hasPlayedRef.current = false;
+    setLastErrorMessage(null);
+    setIsStartupLoading(true);
     setVideoMountKey((current) => current + 1);
     setHasStarted(true);
   };
 
   const showManualStartButton = requireManualStart && manualStartReady && !hasStarted;
   const showLoadingOverlay = ((requireManualStart && !manualStartReady) || isStartupLoading) && !hasPlayedRef.current;
+  const showRetryButton = Boolean(lastErrorMessage) && !showLoadingOverlay;
 
   return (
     <div className="player-frame">
@@ -331,6 +319,16 @@ export function LivePlayer({
         <button type="button" className="player-overlay-button" onClick={handleManualStart} aria-label="재생">
           <span className="player-overlay-icon">▶</span>
         </button>
+      ) : null}
+      {showRetryButton ? (
+        <div className="player-loading-overlay">
+          <div className="player-loading-content">
+            <div className="player-loading-text">{lastErrorMessage}</div>
+            <button type="button" className="player-overlay-button" onClick={handleRetry} aria-label="다시 시도">
+              <span className="player-overlay-icon">다시 시도</span>
+            </button>
+          </div>
+        </div>
       ) : null}
     </div>
   );
