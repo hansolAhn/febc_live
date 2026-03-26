@@ -1,9 +1,15 @@
 ﻿FROM node:20-alpine AS deps
 WORKDIR /app
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false
+ENV NPM_CONFIG_FUND=false
+ENV NPM_CONFIG_AUDIT=false
 COPY package.json package-lock.json* ./
 RUN npm install
 FROM node:20-alpine AS builder
 WORKDIR /app
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false
+ENV NPM_CONFIG_FUND=false
+ENV NPM_CONFIG_AUDIT=false
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build

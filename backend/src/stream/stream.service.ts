@@ -19,6 +19,7 @@ type StreamRuntimeState = {
   lastPlaylistSignature: string | null;
   lastPlaylistUpdatedAt: string | null;
   lifecyclePhase: "idle" | "publishing" | "playback-ready" | "stopped";
+  hasAnnouncedPublishing: boolean;
   hasAnnouncedPlaybackReady: boolean;
   viewerHeartbeats: Map<string, string>;
 };
@@ -57,8 +58,9 @@ export class StreamService {
       state.lastPublishedAt = now;
       state.lastStoppedAt = null;
       state.lastSegmentSeenAt = now;
+      state.hasAnnouncedPublishing = true;
       state.hasAnnouncedPlaybackReady = false;
-      this.setLifecyclePhase(state, "publishing", `방송 시작 감지됨: ${stream}`);
+      this.setLifecyclePhase(state, "publishing", `방송 시작됨: ${stream}`);
     }
 
     if (event === "stop") {
@@ -67,9 +69,10 @@ export class StreamService {
       state.lastSegmentSeenAt = null;
       state.lastPlaylistSignature = null;
       state.lastPlaylistUpdatedAt = null;
+      state.hasAnnouncedPublishing = false;
       state.hasAnnouncedPlaybackReady = false;
       state.viewerHeartbeats.clear();
-      this.setLifecyclePhase(state, "stopped", `방송 종료 감지됨: ${stream}`);
+      this.setLifecyclePhase(state, "stopped", `방송 종료됨: ${stream}`);
     }
 
     return { allowed: true, event, stream, watermarkToken: "mvp-watermark-token" };
@@ -154,7 +157,8 @@ export class StreamService {
       state.lastPlaylistSignature = null;
       state.lastPlaylistUpdatedAt = null;
       state.lastSegmentSeenAt = null;
-      this.setLifecyclePhase(state, "stopped", `방송 종료 상태 반영됨: ${stream}`);
+      state.hasAnnouncedPublishing = false;
+      this.setLifecyclePhase(state, "stopped", `방송 종료됨: ${stream}`);
     }
 
     const effectiveLastPlaylistSeenAt = stoppedAfterLastPublish ? null : state.lastPlaylistUpdatedAt;
@@ -177,14 +181,24 @@ export class StreamService {
 
     state.isPublishing = effectivePublishing;
 
+    if (effectivePublishing && !state.hasAnnouncedPublishing) {
+      state.hasAnnouncedPublishing = true;
+      this.setLifecyclePhase(state, "publishing", `방송 시작됨: ${stream}`);
+    }
+
     if (playbackAvailable) {
       if (!state.hasAnnouncedPlaybackReady) {
         state.hasAnnouncedPlaybackReady = true;
-        this.setLifecyclePhase(state, "playback-ready", `방송 재생 가능 상태 감지됨: ${stream}`);
+        this.setLifecyclePhase(state, "playback-ready", `방송 재생 가능: ${stream}`);
       }
     } else if (effectivePublishing) {
       state.lifecyclePhase = "publishing";
     } else if (!stoppedAfterLastPublish) {
+      if (state.hasAnnouncedPublishing || state.hasAnnouncedPlaybackReady) {
+        state.hasAnnouncedPublishing = false;
+        state.hasAnnouncedPlaybackReady = false;
+        this.setLifecyclePhase(state, "stopped", `방송 종료됨: ${stream}`);
+      }
       state.lifecyclePhase = "idle";
     }
 
@@ -216,6 +230,7 @@ export class StreamService {
       lastPlaylistSignature: null,
       lastPlaylistUpdatedAt: null,
       lifecyclePhase: "idle",
+      hasAnnouncedPublishing: false,
       hasAnnouncedPlaybackReady: false,
       viewerHeartbeats: new Map<string, string>()
     };
