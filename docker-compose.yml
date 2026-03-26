@@ -1,0 +1,85 @@
+version: "3.9"
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    env_file:
+      - ./.env
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:${NGINX_HTTP_PORT:-8080}/api
+      NEXT_PUBLIC_HLS_BASE_URL: http://localhost:${NGINX_HTTP_PORT:-8080}/hls/live
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./.env
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgres://${POSTGRES_USER:-febc_live}:${POSTGRES_PASSWORD:-change_me}@postgres:5432/${POSTGRES_DB:-febc_live}
+      REDIS_URL: redis://redis:6379
+      STREAM_HLS_BASE_URL: /hls/live
+    ports:
+      - "${BACKEND_PORT:-4000}:4000"
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-febc_live}
+      POSTGRES_USER: ${POSTGRES_USER:-febc_live}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      - frontend
+      - backend
+      - srs
+    ports:
+      - "${NGINX_HTTP_PORT:-8080}:80"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/nginx/conf.d:/etc/nginx/conf.d:ro
+    restart: unless-stopped
+
+  srs:
+    image: ossrs/srs:5
+    ports:
+      - "${SRS_RTMP_PORT:-1935}:1935"
+      - "${SRS_HTTP_PORT:-8081}:8080"
+    volumes:
+      - ./infra/srs/srs.conf:/usr/local/srs/conf/srs.conf:ro
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
