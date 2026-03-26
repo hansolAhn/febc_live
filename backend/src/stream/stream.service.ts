@@ -19,6 +19,7 @@ type StreamRuntimeState = {
   lastPlaylistSignature: string | null;
   lastPlaylistUpdatedAt: string | null;
   lifecyclePhase: "idle" | "publishing" | "playback-ready" | "stopped";
+  hasAnnouncedPlaybackReady: boolean;
   viewerHeartbeats: Map<string, string>;
 };
 
@@ -56,6 +57,7 @@ export class StreamService {
       state.lastPublishedAt = now;
       state.lastStoppedAt = null;
       state.lastSegmentSeenAt = now;
+      state.hasAnnouncedPlaybackReady = false;
       this.setLifecyclePhase(state, "publishing", `방송 시작 감지됨: ${stream}`);
     }
 
@@ -65,6 +67,7 @@ export class StreamService {
       state.lastSegmentSeenAt = null;
       state.lastPlaylistSignature = null;
       state.lastPlaylistUpdatedAt = null;
+      state.hasAnnouncedPlaybackReady = false;
       state.viewerHeartbeats.clear();
       this.setLifecyclePhase(state, "stopped", `방송 종료 감지됨: ${stream}`);
     }
@@ -175,11 +178,14 @@ export class StreamService {
     state.isPublishing = effectivePublishing;
 
     if (playbackAvailable) {
-      this.setLifecyclePhase(state, "playback-ready", `방송 재생 가능 상태 감지됨: ${stream}`);
+      if (!state.hasAnnouncedPlaybackReady) {
+        state.hasAnnouncedPlaybackReady = true;
+        this.setLifecyclePhase(state, "playback-ready", `방송 재생 가능 상태 감지됨: ${stream}`);
+      }
     } else if (effectivePublishing) {
-      this.setLifecyclePhase(state, "publishing", `방송 송출 중 상태 감지됨: ${stream}`);
+      state.lifecyclePhase = "publishing";
     } else if (!stoppedAfterLastPublish) {
-      this.setLifecyclePhase(state, "idle", `방송 대기 상태 감지됨: ${stream}`);
+      state.lifecyclePhase = "idle";
     }
 
     const activeViewerCount = effectivePublishing ? state.viewerHeartbeats.size : 0;
@@ -210,6 +216,7 @@ export class StreamService {
       lastPlaylistSignature: null,
       lastPlaylistUpdatedAt: null,
       lifecyclePhase: "idle",
+      hasAnnouncedPlaybackReady: false,
       viewerHeartbeats: new Map<string, string>()
     };
     this.runtimeStates.set(stream, created);

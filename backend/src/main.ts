@@ -1,6 +1,9 @@
 ﻿import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module";
+
+(process as NodeJS.Process & { noDeprecation?: boolean }).noDeprecation = true;
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: ["error", "warn"]

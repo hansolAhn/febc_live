@@ -183,6 +183,7 @@ function buildAdminStatusMeta(playerState: PlaybackState, streamStatus: StreamSt
 }
 
 export default function LivePage() {
+  const branchPlaybackWarmupSessionKey = "febc-live-branch-warmup-complete";
   const pathname = usePathname();
   const { user } = useAuth();
   const userId = user?.id ?? null;
@@ -201,6 +202,7 @@ export default function LivePage() {
   const isPublishing = Boolean(streamStatus?.isPublishing);
   const playbackAvailable = Boolean(streamStatus?.playbackAvailable);
   const hasLiveSignal = isPublishing || playbackAvailable;
+  const [branchManualStartDelayMs, setBranchManualStartDelayMs] = useState(15000);
 
   useEffect(() => {
     if (!userId) return;
@@ -237,9 +239,37 @@ export default function LivePage() {
     setPlayerState({ status: "idle" });
     setError(null);
     setShowStoppedNotice(false);
+    if (typeof window !== "undefined" && window.sessionStorage.getItem(branchPlaybackWarmupSessionKey) === "ready") {
+      setBranchManualStartDelayMs(0);
+    } else {
+      setBranchManualStartDelayMs(15000);
+    }
     setPlayerRenderKey((current) => current + 1);
     previousLiveSignalRef.current = false;
-  }, [pathname]);
+  }, [branchPlaybackWarmupSessionKey, pathname]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || isSuperAdmin) {
+      return;
+    }
+
+    if (streamStatus === null) {
+      return;
+    }
+
+    if (!hasLiveSignal) {
+      window.sessionStorage.removeItem(branchPlaybackWarmupSessionKey);
+      setBranchManualStartDelayMs(15000);
+      return;
+    }
+
+    if (window.sessionStorage.getItem(branchPlaybackWarmupSessionKey) === "ready") {
+      setBranchManualStartDelayMs(0);
+      return;
+    }
+
+    setBranchManualStartDelayMs(15000);
+  }, [branchPlaybackWarmupSessionKey, hasLiveSignal, isSuperAdmin, streamStatus]);
 
   useEffect(() => {
     const hadLiveSignal = previousLiveSignalRef.current;
@@ -298,6 +328,35 @@ export default function LivePage() {
       cancelled = true;
     };
   }, [hasLiveSignal, pathname, playbackAccess, user, userId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || isSuperAdmin) {
+      return;
+    }
+
+    if (!hasLiveSignal || !playbackAccess) {
+      return;
+    }
+
+    if (branchManualStartDelayMs === 0) {
+      window.sessionStorage.setItem(branchPlaybackWarmupSessionKey, "ready");
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      window.sessionStorage.setItem(branchPlaybackWarmupSessionKey, "ready");
+    }, branchManualStartDelayMs);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [
+    branchManualStartDelayMs,
+    branchPlaybackWarmupSessionKey,
+    hasLiveSignal,
+    isSuperAdmin,
+    playbackAccess
+  ]);
 
   useEffect(() => {
     if (playerState.status === "playing") {
@@ -382,7 +441,7 @@ export default function LivePage() {
               username={user.username}
               watermark={user.watermark}
               requireManualStart
-              manualStartDelayMs={10000}
+              manualStartDelayMs={branchManualStartDelayMs}
               onPlaybackStateChange={setPlayerState}
             />
           ) : null}

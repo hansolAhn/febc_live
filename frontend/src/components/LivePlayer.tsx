@@ -35,7 +35,7 @@ export function LivePlayer({
   branchName,
   username,
   watermark,
-  controls = false,
+  controls = true,
   muted = false,
   requireManualStart = false,
   manualStartDelayMs = 0,
