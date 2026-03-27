@@ -3,11 +3,17 @@ type Device = {
   branch: string;
   user: string;
   label: string;
+  displayName: string;
   fingerprint: string;
   trusted: boolean;
   blocked: boolean;
   statusLabel: string;
   lastIp: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  approvalUpdatedAt: string;
+  userAgentSummary: string;
+  currentSession: boolean;
 };
 
 export function DeviceList({
@@ -31,9 +37,14 @@ export function DeviceList({
               <th>지사</th>
               <th>사용자</th>
               <th>기기 이름</th>
+              <th>자동 식별명</th>
               <th>기기 식별값</th>
               <th>상태</th>
               <th>마지막 접속 IP</th>
+              <th>최초 등록</th>
+              <th>마지막 활동</th>
+              <th>최근 승인/차단</th>
+              <th>브라우저/OS</th>
               <th>관리</th>
             </tr>
           </thead>
@@ -48,9 +59,14 @@ export function DeviceList({
                   <td>{device.branch}</td>
                   <td>{device.user}</td>
                   <td>{device.label}</td>
+                  <td>{device.displayName}{device.currentSession ? " / 현재 로그인 기기" : ""}</td>
                   <td>{device.fingerprint}</td>
                   <td>{device.statusLabel}</td>
                   <td>{device.lastIp}</td>
+                  <td>{device.firstSeenAt}</td>
+                  <td>{device.lastSeenAt}</td>
+                  <td>{device.approvalUpdatedAt}</td>
+                  <td>{device.userAgentSummary}</td>
                   <td>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       {showApprove ? (

@@ -8,6 +8,50 @@ import { useAuth } from "./providers/AuthProvider";
 const DUPLICATE_LOGIN_MESSAGE = "이미 이 지사 계정으로 로그인 중입니다. 기존 세션을 종료한 후 다시 시도하세요.";
 const UNREGISTERED_DEVICE_MESSAGE = "등록되지 않은 기기입니다. 관리자 승인 후 로그인할 수 있습니다.";
 const BLOCKED_DEVICE_MESSAGE = "차단된 기기입니다. 관리자에게 문의하세요.";
+const DEVICE_FINGERPRINT_STORAGE_KEY = "febc_live_device_fingerprint";
+
+function buildDetectedDeviceLabel() {
+  if (typeof window === "undefined") {
+    return "현재 브라우저 기기";
+  }
+
+  const userAgent = window.navigator.userAgent.toLowerCase();
+  const browser = userAgent.includes("edg/")
+    ? "Edge"
+    : userAgent.includes("chrome/")
+      ? "Chrome"
+      : userAgent.includes("safari/") && !userAgent.includes("chrome/")
+        ? "Safari"
+        : userAgent.includes("firefox/")
+          ? "Firefox"
+          : "Browser";
+  const os = userAgent.includes("windows")
+    ? "Windows"
+    : userAgent.includes("android")
+      ? "Android"
+      : userAgent.includes("iphone") || userAgent.includes("ipad")
+        ? "iOS"
+        : userAgent.includes("mac os")
+          ? "macOS"
+          : "OS";
+
+  return `${browser} ${os} 자동 감지`;
+}
+
+function resolveFingerprint() {
+  if (typeof window === "undefined") {
+    return "device-fp-001";
+  }
+
+  const saved = window.localStorage.getItem(DEVICE_FINGERPRINT_STORAGE_KEY);
+  if (saved) {
+    return saved;
+  }
+
+  const generated = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `device-${Date.now()}`;
+  window.localStorage.setItem(DEVICE_FINGERPRINT_STORAGE_KEY, generated);
+  return generated;
+}
 
 function formatSecondsLabel(seconds: number) {
   if (seconds <= 0) {
@@ -38,6 +82,14 @@ export function LoginForm() {
   const showDuplicateLoginModal = errorMessage.includes(DUPLICATE_LOGIN_MESSAGE);
   const showUnregisteredDeviceGuide = errorMessage.includes(UNREGISTERED_DEVICE_MESSAGE);
   const showBlockedDeviceGuide = errorMessage.includes(BLOCKED_DEVICE_MESSAGE);
+
+  useEffect(() => {
+    setForm((current) => ({
+      ...current,
+      deviceFingerprint: resolveFingerprint(),
+      deviceLabel: buildDetectedDeviceLabel()
+    }));
+  }, []);
 
   useEffect(() => {
     if (otpCooldownSeconds <= 0 && otpExpiresInSeconds <= 0) {
@@ -143,7 +195,7 @@ export function LoginForm() {
         </div>
         <div>
           <label className="label" htmlFor="deviceLabel">기기 이름</label>
-          <input className="input" id="deviceLabel" value={form.deviceLabel} onChange={(event) => setForm({ ...form, deviceLabel: event.target.value })} />
+          <input className="input" id="deviceLabel" value={form.deviceLabel} readOnly />
         </div>
 
         {otpGuide ? <div className="muted" style={{ color: "#1f8a5b" }}>{otpGuide}</div> : null}

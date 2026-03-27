@@ -21,10 +21,16 @@ export class DevicesService {
         branchName: branch?.name ?? "알 수 없는 지사",
         username: user?.username ?? "-",
         deviceLabel: device.deviceLabel,
+        systemName: device.systemName ?? device.deviceLabel,
         fingerprintHash: device.fingerprintHash,
         isTrusted: device.isTrusted,
         isBlocked: device.isBlocked,
-        lastIp: device.lastIp
+        lastIp: device.lastIp,
+        firstSeenAt: device.firstSeenAt ?? null,
+        lastSeenAt: device.lastSeenAt ?? null,
+        approvalUpdatedAt: device.approvalUpdatedAt ?? null,
+        lastUserAgent: device.lastUserAgent ?? "",
+        isCurrentSession: false
       };
     });
   }

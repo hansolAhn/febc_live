@@ -422,14 +422,49 @@ function mapSecurityEventTypeLabel(type: string) {
 function mapSeverityLabel(severity: string) {
   switch (severity) {
     case "high":
-      return "고위험";
+      return "높음";
     case "medium":
       return "보통";
     case "low":
-      return "참고";
+      return "낮음";
     default:
       return severity;
   }
+}
+
+function summarizeUserAgent(userAgent: string) {
+  const normalized = userAgent.toLowerCase();
+  const browser = normalized.includes("edg/")
+    ? "Edge"
+    : normalized.includes("chrome/")
+      ? "Chrome"
+      : normalized.includes("safari/") && !normalized.includes("chrome/")
+        ? "Safari"
+        : normalized.includes("firefox/")
+          ? "Firefox"
+          : "브라우저 확인 필요";
+
+  const os = normalized.includes("windows")
+    ? "Windows"
+    : normalized.includes("android")
+      ? "Android"
+      : normalized.includes("iphone") || normalized.includes("ipad") || normalized.includes("mac os")
+        ? "Apple"
+        : "OS 확인 필요";
+
+  return `${browser} / ${os}`;
+}
+
+function maskFingerprint(value: string) {
+  if (!value || value === "-") {
+    return "-";
+  }
+
+  if (value.length <= 12) {
+    return value;
+  }
+
+  return `${value.slice(0, 8)}...${value.slice(-4)}`;
 }
 
 function formatSecurityEventDetail(type: string, detail: Record<string, unknown>) {
@@ -444,10 +479,14 @@ function formatSecurityEventDetail(type: string, detail: Record<string, unknown>
       return `관리자 승인이 필요한 기기입니다. 기기명: ${String(detail.deviceLabel ?? "-")}`;
     case "SESSION_TAKEOVER":
       if (detail.takeoverMode === "MASTER_OVERRIDE") {
-        return `최고 관리자가 기존 세션을 종료하고 로그인했습니다. 아이디: ${String(detail.username ?? "-")}`;
+        return detail.hasDifferentNetwork
+          ? `최고 관리자가 다른 네트워크에서 기존 세션을 종료하고 로그인했습니다. 아이디: ${String(detail.username ?? "-")}`
+          : `최고 관리자가 같은 네트워크에서 기존 세션을 종료하고 로그인했습니다. 아이디: ${String(detail.username ?? "-")}`;
       }
 
-      return `기존 세션 종료 후 로그인을 선택했습니다. 아이디: ${String(detail.username ?? "-")}`;
+      return detail.hasDifferentNetwork
+        ? `기존 세션을 종료하고 다른 네트워크에서 다시 로그인했습니다. 아이디: ${String(detail.username ?? "-")}`
+        : `기존 세션을 종료하고 같은 네트워크에서 다시 로그인했습니다. 아이디: ${String(detail.username ?? "-")}`;
     case "CONCURRENT_SESSION_BLOCKED":
       return `이미 로그인 중이어서 새 로그인을 차단했습니다. 아이디: ${String(detail.username ?? "-")}`;
     case "BLOCKED_DEVICE_LOGIN":
@@ -608,8 +647,12 @@ export async function fetchSessions() {
     id: String(session.id ?? `session-${index}`),
     branch: mapBranchLabel(typeof session.branchCode === "string" ? session.branchCode : "unknown"),
     username: typeof session.username === "string" ? session.username : "unknown",
+    deviceLabel: typeof session.deviceLabel === "string" ? session.deviceLabel : "기기 확인 필요",
     ipAddress: typeof session.ipAddress === "string" ? session.ipAddress : "-",
     startedAt: formatDateTime(typeof session.startedAt === "string" ? session.startedAt : new Date().toISOString()),
+    lastSeenAt: formatDateTime(typeof session.lastSeenAt === "string" ? session.lastSeenAt : new Date().toISOString()),
+    sessionKeyTail: typeof session.sessionKey === "string" ? session.sessionKey.slice(-6) : "-",
+    userAgentSummary: summarizeUserAgent(typeof session.userAgent === "string" ? session.userAgent : ""),
     status: mapSessionStatusLabel(typeof session.status === "string" ? session.status : "UNKNOWN")
   }));
 }
@@ -624,11 +667,17 @@ export async function fetchDevices() {
       branch: typeof device.branchName === "string" ? device.branchName : mapBranchLabel(typeof device.branchCode === "string" ? device.branchCode : "unknown"),
       user: typeof device.username === "string" ? device.username : "-",
       label: typeof device.deviceLabel === "string" ? device.deviceLabel : "알 수 없는 기기",
-      fingerprint: typeof device.fingerprintHash === "string" ? device.fingerprintHash : "-",
+      fingerprint: maskFingerprint(typeof device.fingerprintHash === "string" ? device.fingerprintHash : "-"),
       trusted: isTrusted,
       blocked: isBlocked,
       statusLabel: mapDeviceStatusLabel(isTrusted, isBlocked),
-      lastIp: typeof device.lastIp === "string" ? device.lastIp : "-"
+      lastIp: typeof device.lastIp === "string" ? device.lastIp : "-",
+      firstSeenAt: formatDateTime(typeof device.firstSeenAt === "string" ? device.firstSeenAt : new Date().toISOString()),
+      lastSeenAt: formatDateTime(typeof device.lastSeenAt === "string" ? device.lastSeenAt : new Date().toISOString()),
+      approvalUpdatedAt: typeof device.approvalUpdatedAt === "string" ? formatDateTime(device.approvalUpdatedAt) : "-",
+      userAgentSummary: summarizeUserAgent(typeof device.lastUserAgent === "string" ? device.lastUserAgent : ""),
+      displayName: typeof device.systemName === "string" ? device.systemName : "자동 감지 기기",
+      currentSession: Boolean(device.isCurrentSession)
     };
   });
 }

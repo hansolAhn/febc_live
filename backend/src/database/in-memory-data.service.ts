@@ -127,7 +127,12 @@ export class InMemoryDataService {
       branchId: "branch-seoul",
       fingerprintHash: "device-fp-001",
       deviceLabel: "HQ Chrome Windows",
+      systemName: "Chrome Windows 자동 감지",
       lastIp: "10.10.1.10",
+      firstSeenAt: "2026-03-01T01:00:00.000Z",
+      lastSeenAt: "2026-03-26T15:51:07.000Z",
+      approvalUpdatedAt: "2026-03-01T01:10:00.000Z",
+      lastUserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
       isTrusted: true,
       isBlocked: false
     },
@@ -137,7 +142,12 @@ export class InMemoryDataService {
       branchId: "branch-busan",
       fingerprintHash: "device-fp-002",
       deviceLabel: "Busan iPad",
+      systemName: "Safari iOS 자동 감지",
       lastIp: "10.20.1.15",
+      firstSeenAt: "2026-03-05T03:00:00.000Z",
+      lastSeenAt: "2026-03-26T14:20:00.000Z",
+      approvalUpdatedAt: "2026-03-05T03:05:00.000Z",
+      lastUserAgent: "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
       isTrusted: false,
       isBlocked: false
     }
@@ -339,11 +349,16 @@ export class InMemoryDataService {
     fingerprintHash: string;
     deviceLabel: string;
     ipAddress: string;
+    userAgent: string;
+    systemName: string;
   }) {
+    const now = new Date().toISOString();
     const existing = this.findDeviceByFingerprint(input.userId, input.fingerprintHash);
     if (existing) {
       existing.lastIp = input.ipAddress;
-      existing.deviceLabel = input.deviceLabel || existing.deviceLabel;
+      existing.lastSeenAt = now;
+      existing.lastUserAgent = input.userAgent;
+      existing.systemName = input.systemName || existing.systemName;
       return existing;
     }
 
@@ -353,7 +368,12 @@ export class InMemoryDataService {
       branchId: input.branchId,
       fingerprintHash: input.fingerprintHash,
       deviceLabel: input.deviceLabel,
+      systemName: input.systemName,
       lastIp: input.ipAddress,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      approvalUpdatedAt: now,
+      lastUserAgent: input.userAgent,
       isTrusted: false,
       isBlocked: false
     };
@@ -386,6 +406,7 @@ export class InMemoryDataService {
       device.isTrusted = false;
       device.isBlocked = true;
     }
+    device.approvalUpdatedAt = new Date().toISOString();
 
     return device;
   }

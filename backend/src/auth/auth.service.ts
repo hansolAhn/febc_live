@@ -29,13 +29,14 @@ export class AuthService {
   async login(dto: LoginDto, request: Request) {
     const ipAddress = this.extractIp(request);
     const userAgent = request.headers["user-agent"] ?? "unknown";
+    const deviceSystemName = this.summarizeUserAgent(String(userAgent));
     const branch = this.dataService.findBranchByCode(dto.branchCode);
 
     if (!branch) {
       this.dataService.addLoginAttemptLog({ username: dto.username, attemptIp: ipAddress, succeeded: false, failureReason: "BRANCH_NOT_FOUND" });
       this.securityEventsService.create({
         eventType: SecurityEventType.LOGIN_FAILURE,
-        severity: "medium",
+        severity: "low",
         detail: { reason: "BRANCH_NOT_FOUND", username: dto.username, ipAddress }
       });
       throw new AuthenticationException("Invalid branch or user");
@@ -48,7 +49,7 @@ export class AuthService {
         branchId: branch.id,
         userId: user?.id,
         eventType: SecurityEventType.LOGIN_FAILURE,
-        severity: "medium",
+        severity: "low",
         detail: { reason: "INVALID_CREDENTIALS", username: dto.username, ipAddress }
       });
       throw new AuthenticationException("Invalid branch or user");
@@ -108,7 +109,9 @@ export class AuthService {
       branchId: branch.id,
       fingerprintHash: dto.deviceFingerprint,
       deviceLabel: dto.deviceLabel,
-      ipAddress
+      ipAddress,
+      userAgent: String(userAgent),
+      systemName: deviceSystemName
     });
     const isMasterAccount = this.dataService.isSeoulMasterAccount(user.id);
 
@@ -144,17 +147,19 @@ export class AuthService {
       const activeSessions = await this.sessionsService.findActiveSessionsByUser(user.id);
 
       if (activeSessions.length > 0 && !isMasterAccount) {
+        const hasDifferentNetwork = activeSessions.some((session) => session.ipAddress !== ipAddress);
         if (dto.forceLogin) {
           await this.sessionsService.enforceSingleSession(branch.id, user.id);
           this.securityEventsService.create({
             branchId: branch.id,
             userId: user.id,
             eventType: SecurityEventType.SESSION_TAKEOVER,
-            severity: "medium",
+            severity: hasDifferentNetwork ? "medium" : "low",
             detail: {
               takeoverMode: "USER_CONFIRMED_FORCE_LOGIN",
               activeSessionCount: activeSessions.length,
-              username: user.username
+              username: user.username,
+              hasDifferentNetwork
             }
           });
         } else {
@@ -175,16 +180,18 @@ export class AuthService {
       }
 
       if (activeSessions.length > 0 && isMasterAccount) {
+        const hasDifferentNetwork = activeSessions.some((session) => session.ipAddress !== ipAddress);
         await this.sessionsService.enforceSingleSession(branch.id, user.id);
         this.securityEventsService.create({
           branchId: branch.id,
           userId: user.id,
           eventType: SecurityEventType.SESSION_TAKEOVER,
-          severity: "high",
+          severity: hasDifferentNetwork ? "high" : "medium",
           detail: {
             takeoverMode: "MASTER_OVERRIDE",
             activeSessionCount: activeSessions.length,
-            username: user.username
+            username: user.username,
+            hasDifferentNetwork
           }
         });
       }
@@ -330,5 +337,30 @@ export class AuthService {
     }
 
     return request.ip || "127.0.0.1";
+  }
+
+  private summarizeUserAgent(userAgent: string) {
+    const normalized = userAgent.toLowerCase();
+    const browser = normalized.includes("edg/")
+      ? "Edge"
+      : normalized.includes("chrome/")
+        ? "Chrome"
+        : normalized.includes("safari/") && !normalized.includes("chrome/")
+          ? "Safari"
+          : normalized.includes("firefox/")
+            ? "Firefox"
+            : "Browser";
+
+    const os = normalized.includes("windows")
+      ? "Windows"
+      : normalized.includes("android")
+        ? "Android"
+        : normalized.includes("iphone") || normalized.includes("ipad")
+          ? "iOS"
+          : normalized.includes("mac os")
+            ? "macOS"
+            : "OS";
+
+    return `${browser} ${os} 자동 감지`;
   }
 }

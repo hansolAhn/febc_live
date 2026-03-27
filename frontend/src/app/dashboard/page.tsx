@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ActiveSessionTable } from "@/components/ActiveSessionTable";
@@ -32,7 +33,7 @@ function formatDateTime(value: string | null) {
 function buildStatusMeta(playerState: PlaybackState, streamStatus: StreamStatus | null, error: string | null) {
   if (error?.includes("Session") || error?.includes("session")) {
     return {
-      label: "세션 종료됨",
+      label: "세션 종료",
       className: "risk-badge risk-high",
       message: "관리자 세션이 종료되었습니다. 다시 로그인해 주세요."
     };
@@ -58,9 +59,10 @@ function buildStatusMeta(playerState: PlaybackState, streamStatus: StreamStatus 
     return {
       label: streamStatus?.playbackAvailable || streamStatus?.isPublishing ? "재생 대기" : "송출 확인 중",
       className: "risk-badge risk-medium",
-      message: streamStatus?.playbackAvailable || streamStatus?.isPublishing
-        ? "방송은 송출 중입니다. 영상 가운데 재생 버튼을 누르면 바로 모니터링할 수 있습니다."
-        : "송출 상태를 확인하는 중입니다."
+      message:
+        streamStatus?.playbackAvailable || streamStatus?.isPublishing
+          ? "방송은 송출 중입니다. 재생 버튼을 눌러 모니터링할 수 있습니다."
+          : "송출 상태를 확인하는 중입니다."
     };
   }
 
@@ -98,6 +100,7 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const userId = user?.id ?? null;
   const roleCode = user?.roleCode ?? null;
+
   const [metrics, setMetrics] = useState({ activeBranches: 0, activeSessions: 0, highRiskEvents: 0, trackedDevices: 0 });
   const [events, setEvents] = useState<Awaited<ReturnType<typeof mockApi.fetchSecurityEvents>>>([]);
   const [sessions, setSessions] = useState<Awaited<ReturnType<typeof mockApi.fetchSessions>>>([]);
@@ -107,6 +110,7 @@ export default function DashboardPage() {
   const [previewState, setPreviewState] = useState<PlaybackState>({ status: "idle" });
   const [playerRenderKey, setPlayerRenderKey] = useState(0);
   const [manualStartDelayMs, setManualStartDelayMs] = useState(15000);
+
   const requestedPreviewAccessRef = useRef(false);
   const hasLiveSignal = Boolean(streamStatus?.isPublishing || streamStatus?.playbackAvailable);
 
@@ -183,11 +187,7 @@ export default function DashboardPage() {
   }, [roleCode, userId]);
 
   useEffect(() => {
-    if (typeof window === "undefined" || roleCode !== "SUPER_ADMIN") {
-      return;
-    }
-
-    if (streamStatus === null) {
+    if (typeof window === "undefined" || roleCode !== "SUPER_ADMIN" || streamStatus === null) {
       return;
     }
 
@@ -224,8 +224,9 @@ export default function DashboardPage() {
 
     const accessToken = window.localStorage.getItem("febc_live_access_token");
     if (!accessToken) {
-      setPreviewError("재생 세션이 없어 라이브 미리보기를 불러올 수 없습니다.");
-      setPreviewState({ status: "error", message: "재생 세션이 없어 라이브 미리보기를 불러올 수 없습니다." });
+      const message = "재생 세션이 없어 라이브 미리보기를 불러올 수 없습니다.";
+      setPreviewError(message);
+      setPreviewState({ status: "error", message });
       return;
     }
     const resolvedAccessToken = accessToken;
@@ -282,27 +283,34 @@ export default function DashboardPage() {
   }, [dashboardWarmupSessionKey, hasLiveSignal, manualStartDelayMs, playbackAccess, roleCode]);
 
   const previewMeta = useMemo(() => buildStatusMeta(previewState, streamStatus, previewError), [previewError, previewState, streamStatus]);
+  const activeSessions = useMemo(
+    () => sessions.filter((session) => session.status === "사용 중" || session.status === "접속 중"),
+    [sessions]
+  );
 
   if (!user || roleCode !== "SUPER_ADMIN") {
     return null;
   }
 
-  const shouldRenderPlayer = Boolean(hasLiveSignal && playbackAccess);
-  const previewAccess = shouldRenderPlayer ? playbackAccess : null;
+  const previewAccess = hasLiveSignal && playbackAccess ? playbackAccess : null;
 
   return (
     <div className="page-wrap">
       <PageHeader title="관리자 대시보드" subtitle="운영 현황, 최근 보안 이벤트, 현재 송출 상태를 한 화면에서 확인합니다." />
 
       <div className="metrics">
-        <StatCard label="현재 접속 지사" value={String(metrics.activeBranches)} detail="지금 접속 중인 지사 수" />
-        <StatCard label="현재 접속 세션" value={String(metrics.activeSessions)} detail="지금 사용 중인 로그인 수" />
-        <StatCard label="고위험 보안 알림" value={String(metrics.highRiskEvents)} detail="즉시 확인이 필요한 경고 수" />
-        <StatCard label="관리 중인 기기" value={String(metrics.trackedDevices)} detail="확인 또는 검토 대상 기기 수" />
+        <StatCard
+          label="현재 접속 현황"
+          value={String(metrics.activeSessions)}
+          detail={`접속 지사 ${metrics.activeBranches}곳 / 사용 중 세션 ${metrics.activeSessions}개`}
+          href="/security-events?tab=sessions"
+        />
+        <StatCard label="고위험 보안 알림" value={String(metrics.highRiskEvents)} detail="즉시 확인이 필요한 경고 수" href="/security-events?tab=events" />
+        <StatCard label="관리 중인 기기" value={String(metrics.trackedDevices)} detail="확인 또는 검토 대상 기기 수" href="/security-events?tab=devices" />
       </div>
 
-      <div className="grid two">
-        <div className="panel">
+      <div className="grid two dashboard-main-grid">
+        <div className="panel dashboard-live-panel">
           <div className="panel-header-inline">
             <div className="panel-title">라이브 상태</div>
             <span className={previewMeta.className}>{previewMeta.label}</span>
@@ -323,29 +331,29 @@ export default function DashboardPage() {
             />
           ) : (
             <div className="stack muted">
-              <div>{previewError ?? "라이브 미리보기를 준비하는 중입니다..."}</div>
+            <div>{previewError ?? "라이브 미리보기를 준비하는 중입니다..."}</div>
             </div>
           )}
         </div>
-
-        <div className="panel">
-          <div className="panel-title">방송 상태 정보</div>
-          <div className="stack muted">
-            <div className="content-break">현재 스트림 이름: main</div>
-            <div className="content-break">마지막 스트림 확인 시각: {formatDateTime(streamStatus?.lastSegmentSeenAt ?? null)}</div>
-            <div className="content-break">현재 재생 가능 여부: {streamStatus?.playbackAvailable ? "재생 가능" : "확인 필요"}</div>
-            <div className="content-break">시청 중 사용자 수: {streamStatus?.activeViewerCount ?? 0}명</div>
-            <div className="content-break">OBS 송출 여부: {streamStatus?.isPublishing ? "송출 중" : "송출 없음"}</div>
-          </div>
-        </div>
+        <ActiveSessionTable
+          sessions={activeSessions}
+          compact
+          title="현재 접속 세션"
+          className="dashboard-session-panel"
+          summary={`${activeSessions.length}개 접속 중`}
+        />
       </div>
 
-      <div className="grid two">
+      <div className="grid two dashboard-bottom-grid">
         <div className="panel">
-          <div className="panel-title">최근 보안 이벤트</div>
+          <div className="panel-header-inline">
+            <div className="panel-title">최근 보안 이벤트</div>
+            <Link className="text-link" href="/security-events">
+              전체 보기
+            </Link>
+          </div>
           <SecurityEventTable events={events.slice(0, 5)} />
         </div>
-        <ActiveSessionTable sessions={sessions} />
       </div>
     </div>
   );

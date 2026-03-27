@@ -13,13 +13,10 @@ const basicLinks = [
 const adminLinks = [
   { href: "/dashboard", label: "관리자 대시보드" },
   { href: "/security-events", label: "보안 이벤트" },
-  { href: "/audit-logs", label: "감사 로그" },
-  { href: "/policies", label: "정책 관리" },
-  { href: "/tracking", label: "사용자 / 기기 추적" },
-  { href: "/leakage-analysis", label: "유출 분석" }
+  { href: "/policies", label: "정책 관리" }
 ];
 
-const adminOnlyPaths = new Set(adminLinks.map((link) => link.href));
+const adminOnlyPaths = new Set(["/dashboard", "/security-events", "/audit-logs", "/tracking", "/policies", "/leakage-analysis"]);
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -27,7 +24,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, logout, isLoading } = useAuth();
 
   const isMasterAdmin = user?.roleCode === "SUPER_ADMIN";
-  const links = useMemo(() => (isMasterAdmin ? [...basicLinks, ...adminLinks] : basicLinks), [isMasterAdmin]);
+  const links = useMemo(() => (isMasterAdmin ? adminLinks : basicLinks), [isMasterAdmin]);
 
   useEffect(() => {
     if (isLoading) return;
