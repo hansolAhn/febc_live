@@ -8,7 +8,7 @@ export function StatCard({
 }: {
   label: string;
   value: string;
-  detail: string;
+  detail?: string;
   href?: string;
 }) {
   return (
@@ -22,7 +22,7 @@ export function StatCard({
         ) : null}
       </div>
       <div className="metric-value">{value}</div>
-      <div className="muted">{detail}</div>
+      {detail ? <div className="muted">{detail}</div> : null}
     </div>
   );
 }

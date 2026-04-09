@@ -1,4 +1,44 @@
-﻿export type WatermarkPayload = {
+﻿export type LogoSliceTransform = {
+  scaleX: number;
+  scaleY: number;
+  translateX: number;
+  translateY: number;
+  skewX: number;
+};
+
+export type LogoVariantProfile = {
+  code: string;
+  branchSignature: string;
+  deviceSignature: string;
+  sessionAssistCode: string;
+  slices: {
+    f: LogoSliceTransform;
+    e: LogoSliceTransform;
+    b: LogoSliceTransform;
+    c: LogoSliceTransform;
+    box: LogoSliceTransform;
+  };
+};
+
+export type LogoVariantAsset = {
+  code: string;
+  svgTemplate: string;
+  assetPath?: string;
+  displayName?: string;
+  comparisonHints?: string[];
+};
+
+import {
+  formatAuditPayload,
+  formatSecurityEventDetail,
+  mapAuditActionLabel,
+  mapFailureReasonLabel,
+  mapPolicyFieldLabel,
+  mapSecurityEventTypeLabel,
+  mapSeverityLabel
+} from "@/lib/audit-formatters";
+
+export type WatermarkPayload = {
   profileId: string;
   profileVersion: number;
   visibleWatermark: {
@@ -6,6 +46,12 @@
     microShift: string;
     tint: string;
     sessionCode: string;
+    logoFingerprintCode: string;
+    badgeVersion: string;
+    deviceLabel: string;
+    sessionAssistCode?: string;
+    logoVariantProfile?: LogoVariantProfile;
+    logoVariantSvgTemplate?: string;
   };
   hiddenForensicWatermark: {
     strategy: string;
@@ -15,7 +61,6 @@
 };
 
 export type LoginPayload = {
-  branchCode: string;
   username: string;
   password: string;
   otpCode?: string;
@@ -25,7 +70,6 @@ export type LoginPayload = {
 };
 
 export type RequestLoginOtpPayload = {
-  branchCode: string;
   username: string;
   password: string;
 };
@@ -65,7 +109,6 @@ type BranchPolicyResponse = {
     singleSessionOnly?: boolean;
     otpRequired?: boolean;
     deviceRegistrationRequired?: boolean;
-    forensicWatermarkEnabled?: boolean;
   };
 };
 
@@ -82,14 +125,13 @@ type UserPolicyResponse = {
     singleSessionOnly?: boolean;
     otpRequired?: boolean;
     deviceRegistrationRequired?: boolean;
-    forensicWatermarkEnabled?: boolean;
   };
   allowedIps?: Array<{ cidr: string }>;
 };
 
 type PolicyCard = {
   id: string;
-  field: "singleSessionOnly" | "otpRequired" | "deviceRegistrationRequired" | "forensicWatermarkEnabled";
+  field: "singleSessionOnly" | "otpRequired" | "deviceRegistrationRequired";
   title: string;
   description: string;
   enabled: boolean;
@@ -101,25 +143,16 @@ export type UserSummary = {
   branchCode: string;
   branchName: string;
   roleCode: string;
+  phone: string;
+  password: string;
   isActive: boolean;
 };
 
-type LogoProfile = {
+export type BranchSummary = {
   id: string;
-  branchCode: string;
-  profileVersion: number;
-  profileName: string;
-  visibleWatermarkConfig: Record<string, unknown>;
-  hiddenWatermarkConfig: Record<string, unknown>;
+  code: string;
+  name: string;
   isActive: boolean;
-};
-
-type LogoAssignment = {
-  id: string;
-  eventCode: string;
-  branchCode: string;
-  sessionCode: string;
-  profileId: string;
 };
 
 type AuditLogsApiResponse = {
@@ -127,7 +160,7 @@ type AuditLogsApiResponse = {
   loginAttemptLogs?: Array<Record<string, unknown>>;
 };
 
-type AuditLogItem = {
+export type AuditLogItem = {
   id: string;
   createdAt: string;
   actionType: string;
@@ -138,7 +171,7 @@ type AuditLogItem = {
   payloadSummary: string;
 };
 
-type LoginAttemptLogItem = {
+export type LoginAttemptLogItem = {
   id: string;
   createdAt: string;
   username: string;
@@ -171,8 +204,9 @@ export type StreamStatus = {
 export type LeakageCandidateQuery = {
   sessionCodeFragment?: string;
   branchCode?: string;
+  deviceId?: string;
   username?: string;
-  observedAt?: string;
+  auditActionType?: string;
 };
 
 export type LeakageCandidate = {
@@ -202,13 +236,16 @@ export type LeakageCandidateSearchResult = {
     searchedBy: {
       sessionCodeFragment: string | null;
       branchCode: string | null;
+      deviceId: string | null;
       username: string | null;
-      observedAtFrom: string | null;
-      observedAtTo: string | null;
+      auditActionType: string | null;
     };
   };
   candidates: LeakageCandidate[];
 };
+
+export type SessionSummary = Awaited<ReturnType<typeof fetchSessions>>[number];
+export type DeviceSummary = Awaited<ReturnType<typeof fetchDevices>>[number];
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080/api";
 
@@ -302,21 +339,6 @@ function mapMeResponseToCurrentUser(response: MeApiResponse): CurrentUser {
   };
 }
 
-function mapPolicyFieldLabel(field: string) {
-  switch (field) {
-    case "singleSessionOnly":
-      return "지사당 1세션 제한";
-    case "otpRequired":
-      return "문자 OTP 필수";
-    case "deviceRegistrationRequired":
-      return "등록 기기만 허용";
-    case "forensicWatermarkEnabled":
-      return "포렌식 워터마크";
-    default:
-      return field;
-  }
-}
-
 function buildPolicyCards(policy?: BranchPolicyResponse["policy"]): PolicyCard[] {
   return [
     {
@@ -339,97 +361,8 @@ function buildPolicyCards(policy?: BranchPolicyResponse["policy"]): PolicyCard[]
       title: "등록 기기만 허용",
       description: "등록되지 않은 기기는 추가 확인 대상으로 분류합니다.",
       enabled: Boolean(policy?.deviceRegistrationRequired)
-    },
-    {
-      id: "forensic-watermark",
-      field: "forensicWatermarkEnabled",
-      title: "포렌식 워터마크",
-      description: "시청자 정보와 지사별 식별값을 화면에 표시합니다.",
-      enabled: Boolean(policy?.forensicWatermarkEnabled)
     }
   ];
-}
-
-function mapAuditActionLabel(actionType: string) {
-  switch (actionType) {
-    case "LOGIN_SUCCESS":
-      return "로그인 성공";
-    case "LOGIN_ATTEMPT":
-      return "세션 발급";
-    case "LOGIN_FAILURE":
-      return "로그인 실패";
-    case "LOGOUT":
-      return "로그아웃";
-    case "SECURITY_POLICY_UPDATED":
-      return "보안 정책 변경";
-    case "OTP_SENT":
-      return "OTP 발송";
-    case "DEVICE_APPROVED":
-      return "기기 승인";
-    case "DEVICE_BLOCKED":
-      return "기기 차단";
-    case "USER_BLOCKED":
-      return "계정 차단";
-    case "USER_RESTORED":
-      return "계정 차단 해제";
-    default:
-      return actionType;
-  }
-}
-
-function mapFailureReasonLabel(reason: string) {
-  switch (reason) {
-    case "INVALID_CREDENTIALS":
-      return "아이디 또는 비밀번호 불일치";
-    case "DISALLOWED_IP":
-      return "허용되지 않은 IP";
-    case "OTP_REQUIRED_OR_INVALID":
-      return "OTP 인증 실패";
-    case "BRANCH_NOT_FOUND":
-      return "지사 정보를 찾을 수 없음";
-    case "DEVICE_NOT_REGISTERED":
-      return "관리자 승인 대기 기기";
-    case "DEVICE_BLOCKED":
-      return "차단된 기기";
-    case "ACCOUNT_BLOCKED":
-      return "차단된 계정";
-    default:
-      return reason || "-";
-  }
-}
-
-function mapSecurityEventTypeLabel(type: string) {
-  switch (type) {
-    case "LOGIN_FAILURE":
-      return "로그인 실패";
-    case "DISALLOWED_IP":
-      return "허용되지 않은 IP 접속";
-    case "OTP_FAILURE":
-      return "OTP 인증 실패";
-    case "DEVICE_NOT_REGISTERED":
-      return "승인되지 않은 기기 로그인 시도";
-    case "SESSION_TAKEOVER":
-      return "기존 세션 종료 후 로그인";
-    case "CONCURRENT_SESSION_BLOCKED":
-      return "중복 로그인 차단";
-    case "BLOCKED_DEVICE_LOGIN":
-      return "차단된 기기 로그인 시도";
-    default:
-      return type;
-  }
-}
-
-function mapSeverityLabel(severity: string) {
-  switch (severity) {
-    case "high":
-      return "높음";
-    case "medium":
-      return "보통";
-    case "low":
-      return "낮음";
-    default:
-      return severity;
-  }
 }
 
 function summarizeUserAgent(userAgent: string) {
@@ -465,64 +398,6 @@ function maskFingerprint(value: string) {
   }
 
   return `${value.slice(0, 8)}...${value.slice(-4)}`;
-}
-
-function formatSecurityEventDetail(type: string, detail: Record<string, unknown>) {
-  switch (type) {
-    case "LOGIN_FAILURE":
-      return `로그인에 실패했습니다. 아이디: ${String(detail.username ?? "-")}`;
-    case "DISALLOWED_IP":
-      return `허용되지 않은 IP에서 접속을 시도했습니다. IP: ${String(detail.ipAddress ?? "-")}`;
-    case "OTP_FAILURE":
-      return `OTP 인증에 실패했습니다. 아이디: ${String(detail.username ?? "-")}`;
-    case "DEVICE_NOT_REGISTERED":
-      return `관리자 승인이 필요한 기기입니다. 기기명: ${String(detail.deviceLabel ?? "-")}`;
-    case "SESSION_TAKEOVER":
-      if (detail.takeoverMode === "MASTER_OVERRIDE") {
-        return detail.hasDifferentNetwork
-          ? `최고 관리자가 다른 네트워크에서 기존 세션을 종료하고 로그인했습니다. 아이디: ${String(detail.username ?? "-")}`
-          : `최고 관리자가 같은 네트워크에서 기존 세션을 종료하고 로그인했습니다. 아이디: ${String(detail.username ?? "-")}`;
-      }
-
-      return detail.hasDifferentNetwork
-        ? `기존 세션을 종료하고 다른 네트워크에서 다시 로그인했습니다. 아이디: ${String(detail.username ?? "-")}`
-        : `기존 세션을 종료하고 같은 네트워크에서 다시 로그인했습니다. 아이디: ${String(detail.username ?? "-")}`;
-    case "CONCURRENT_SESSION_BLOCKED":
-      return `이미 로그인 중이어서 새 로그인을 차단했습니다. 아이디: ${String(detail.username ?? "-")}`;
-    case "BLOCKED_DEVICE_LOGIN":
-      return `차단된 기기에서 로그인을 시도했습니다. 기기명: ${String(detail.deviceLabel ?? "-")}`;
-    default:
-      return JSON.stringify(detail);
-  }
-}
-
-function formatAuditPayload(actionType: string, payload: Record<string, unknown>) {
-  switch (actionType) {
-    case "LOGIN_SUCCESS":
-      return `사용자 ${String(payload.username ?? "-")} 로그인 성공`;
-    case "LOGIN_ATTEMPT":
-      return "로그인 세션이 발급되어 브라우저 정보가 함께 기록되었습니다.";
-    case "LOGOUT":
-      return "사용자가 로그아웃했습니다.";
-    case "SECURITY_POLICY_UPDATED": {
-      const changes = payload.changes as Record<string, unknown> | undefined;
-      if (!changes) return "보안 정책이 변경되었습니다.";
-      const entries = Object.entries(changes).map(([key, value]) => `${mapPolicyFieldLabel(key)}: ${value ? "켜짐" : "꺼짐"}`);
-      return `정책 변경 - ${entries.join(", ")}`;
-    }
-    case "OTP_SENT":
-      return `사용자 ${String(payload.username ?? "-")}에게 로그인용 OTP를 발송했습니다.`;
-    case "DEVICE_APPROVED":
-      return `기기 ${String(payload.deviceLabel ?? "-")}를 승인했습니다.`;
-    case "DEVICE_BLOCKED":
-      return `기기 ${String(payload.deviceLabel ?? "-")}를 차단했습니다.`;
-    case "USER_BLOCKED":
-      return `사용자 ${String(payload.username ?? "-")} 계정을 차단했습니다.`;
-    case "USER_RESTORED":
-      return `사용자 ${String(payload.username ?? "-")} 계정 차단을 해제했습니다.`;
-    default:
-      return JSON.stringify(payload);
-  }
 }
 
 function mapSessionStatusLabel(status: string) {
@@ -619,6 +494,10 @@ export async function fetchPolicies(branchCode: string) {
   return buildPolicyCards(response.policy);
 }
 
+export async function fetchBranches(): Promise<BranchSummary[]> {
+  return apiRequest<BranchSummary[]>("/branches", { method: "GET" });
+}
+
 export async function fetchUserPolicy(userId: string) {
   const response = await apiRequest<UserPolicyResponse>(`/security-policy/users/${encodeURIComponent(userId)}`, { method: "GET" });
   return buildPolicyCards(response.policy);
@@ -636,6 +515,8 @@ export async function fetchUsers(): Promise<UserSummary[]> {
       branchCode: typeof branch.code === "string" ? branch.code : "unknown",
       branchName: typeof branch.name === "string" ? branch.name : mapBranchLabel(typeof branch.code === "string" ? branch.code : "unknown"),
       roleCode: typeof role.code === "string" ? role.code : "VIEWER",
+      phone: typeof user.phone === "string" ? user.phone : "",
+      password: typeof user.passwordHash === "string" ? user.passwordHash : "",
       isActive: Boolean(user.isActive)
     };
   });
@@ -645,12 +526,15 @@ export async function fetchSessions() {
   const response = await apiRequest<Array<Record<string, unknown>>>("/sessions", { method: "GET" });
   return response.map((session, index) => ({
     id: String(session.id ?? `session-${index}`),
+    branchCode: typeof session.branchCode === "string" ? session.branchCode : "unknown",
     branch: mapBranchLabel(typeof session.branchCode === "string" ? session.branchCode : "unknown"),
     username: typeof session.username === "string" ? session.username : "unknown",
+    deviceId: typeof session.deviceId === "string" ? session.deviceId : null,
     deviceLabel: typeof session.deviceLabel === "string" ? session.deviceLabel : "기기 확인 필요",
     ipAddress: typeof session.ipAddress === "string" ? session.ipAddress : "-",
     startedAt: formatDateTime(typeof session.startedAt === "string" ? session.startedAt : new Date().toISOString()),
     lastSeenAt: formatDateTime(typeof session.lastSeenAt === "string" ? session.lastSeenAt : new Date().toISOString()),
+    sessionKey: typeof session.sessionKey === "string" ? session.sessionKey : "",
     sessionKeyTail: typeof session.sessionKey === "string" ? session.sessionKey.slice(-6) : "-",
     userAgentSummary: summarizeUserAgent(typeof session.userAgent === "string" ? session.userAgent : ""),
     status: mapSessionStatusLabel(typeof session.status === "string" ? session.status : "UNKNOWN")
@@ -664,10 +548,17 @@ export async function fetchDevices() {
     const isBlocked = Boolean(device.isBlocked);
     return {
       id: String(device.id ?? `device-${index}`),
+      branchCode: typeof device.branchCode === "string" ? device.branchCode : "unknown",
       branch: typeof device.branchName === "string" ? device.branchName : mapBranchLabel(typeof device.branchCode === "string" ? device.branchCode : "unknown"),
       user: typeof device.username === "string" ? device.username : "-",
       label: typeof device.deviceLabel === "string" ? device.deviceLabel : "알 수 없는 기기",
       fingerprint: maskFingerprint(typeof device.fingerprintHash === "string" ? device.fingerprintHash : "-"),
+      forensicLogoCode: typeof device.forensicLogoCode === "string" ? device.forensicLogoCode : "",
+      forensicLogoProfile: typeof device.forensicLogoProfile === "object" && device.forensicLogoProfile ? (device.forensicLogoProfile as LogoVariantProfile) : undefined,
+      forensicLogoAsset:
+        typeof device.forensicLogoAsset === "object" && device.forensicLogoAsset
+          ? (device.forensicLogoAsset as LogoVariantAsset)
+          : undefined,
       trusted: isTrusted,
       blocked: isBlocked,
       statusLabel: mapDeviceStatusLabel(isTrusted, isBlocked),
@@ -698,13 +589,44 @@ export async function restoreUser(userId: string) {
   return apiRequest(`/users/${encodeURIComponent(userId)}/restore`, { method: "PATCH" });
 }
 
-export async function fetchLogoProfiles(branchCode?: string): Promise<LogoProfile[]> {
-  const query = branchCode ? `?branchCode=${encodeURIComponent(branchCode)}` : "";
-  return apiRequest<LogoProfile[]>(`/watermarks/profiles${query}`, { method: "GET" });
+export async function createUserAccount(payload: {
+  branchCode: string;
+  username: string;
+  roleCode: "VIEWER";
+  password: string;
+  phone?: string;
+}) {
+  return apiRequest<{
+    id: string;
+    username: string;
+    isActive: boolean;
+  }>("/users", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
 }
 
-export async function fetchLogoAssignments(): Promise<LogoAssignment[]> {
-  return apiRequest<LogoAssignment[]>("/watermarks/assignments", { method: "GET" });
+export async function resetUserPassword(userId: string, password: string) {
+  return apiRequest<{
+    success: boolean;
+    userId: string;
+    username: string;
+    temporaryPassword: string;
+  }>(`/users/${encodeURIComponent(userId)}/reset-password`, {
+    method: "PATCH",
+    body: JSON.stringify({ password })
+  });
+}
+
+export async function restoreDevice(deviceId: string) {
+  return apiRequest(`/devices/${encodeURIComponent(deviceId)}/restore`, { method: "PATCH" });
+}
+
+export async function updateUserAccount(userId: string, payload: { roleCode?: "SUPER_ADMIN" | "VIEWER"; phone?: string }) {
+  return apiRequest(`/users/${encodeURIComponent(userId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
 }
 
 export async function updatePolicy(branchCode: string, field: PolicyCard["field"], enabled: boolean) {
@@ -770,15 +692,9 @@ export async function fetchLeakageCandidates(query: LeakageCandidateQuery): Prom
 
   if (query.sessionCodeFragment) params.set("sessionCodeFragment", query.sessionCodeFragment);
   if (query.branchCode) params.set("branchCode", query.branchCode);
+  if (query.deviceId) params.set("deviceId", query.deviceId);
   if (query.username) params.set("username", query.username);
-
-  if (query.observedAt) {
-    const center = new Date(query.observedAt);
-    if (!Number.isNaN(center.getTime())) {
-      params.set("observedAtFrom", new Date(center.getTime() - 10 * 60 * 1000).toISOString());
-      params.set("observedAtTo", new Date(center.getTime() + 10 * 60 * 1000).toISOString());
-    }
-  }
+  if (query.auditActionType) params.set("auditActionType", query.auditActionType);
 
   const suffix = params.toString() ? `?${params.toString()}` : "";
   const response = await apiRequest<{
@@ -810,8 +726,8 @@ export async function fetchLeakageCandidates(query: LeakageCandidateQuery): Prom
         ipAddress: typeof candidate.ipAddress === "string" ? candidate.ipAddress : "-",
         matchedBy: Array.isArray(candidate.matchedBy) ? candidate.matchedBy.filter((value): value is string => typeof value === "string") : [],
         watermarkSummary: visibleWatermark
-          ? `로고 ${String(visibleWatermark.logoVariant ?? "-")} / 세션 코드 ${String(visibleWatermark.sessionCode ?? "-")}`
-          : "워터마크 정보 없음",
+          ? `세션 코드 ${String(visibleWatermark.sessionCode ?? "-")} / 식별 토큰 ${String(visibleWatermark.logoFingerprintCode ?? "-")} / 표시 색상 ${String(visibleWatermark.tint ?? "-")}`
+          : "세션 워터마크 정보 없음",
         confidenceScore: typeof candidate.confidenceScore === "number" ? candidate.confidenceScore : 0,
         recentAuditLogs: auditLogs.map((log, logIndex) => {
           const actionType = typeof (log as Record<string, unknown>).actionType === "string" ? String((log as Record<string, unknown>).actionType) : `LOG-${logIndex}`;
@@ -837,4 +753,20 @@ export async function fetchLeakageCandidates(query: LeakageCandidateQuery): Prom
     })
   };
 }
+
+export async function reportClientSecurityEvent(payload: {
+  branchId?: string;
+  userId?: string;
+  eventType: string;
+  severity: "low" | "medium" | "high";
+  detail: Record<string, unknown>;
+}) {
+  return apiRequest("/security-events", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+
+
 

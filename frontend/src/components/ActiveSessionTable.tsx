@@ -38,13 +38,13 @@ export function ActiveSessionTable({
         <table className="table">
           <thead>
             <tr>
-              <th>지사</th>
-              <th>사용자</th>
+              <th>소속</th>
+              <th>아이디</th>
               {compact ? (
                 <>
                   <th>IP</th>
                   <th>접속 기기</th>
-                  <th>상태</th>
+                  <th className="compact-status-column">상태</th>
                 </>
               ) : (
                 <>
@@ -68,7 +68,7 @@ export function ActiveSessionTable({
                   <>
                     <td>{session.ipAddress}</td>
                     <td>{session.deviceLabel}</td>
-                    <td>
+                    <td className="compact-status-column">
                       <span
                         className={`status-dot ${isActiveStatus(session.status) ? "status-dot-good" : "status-dot-bad"}`}
                         aria-label={session.status}

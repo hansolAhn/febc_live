@@ -18,6 +18,7 @@ type LivePlayerProps = {
   branchName: string;
   username: string;
   watermark: WatermarkPayload;
+  showWatermarkOverlay?: boolean;
   controls?: boolean;
   muted?: boolean;
   requireManualStart?: boolean;
@@ -26,13 +27,15 @@ type LivePlayerProps = {
 };
 
 const HLS_ERROR_MESSAGE = "재생 오류가 발생했습니다. 다시 시도해 주세요.";
-const STARTUP_STALL_TIMEOUT_MS = 2500;
+const UNSUPPORTED_HLS_MESSAGE = "이 브라우저는 라이브 재생을 지원하지 않습니다.";
+const STARTUP_STALL_TIMEOUT_MS = 10000;
 
 export function LivePlayer({
   src,
   branchName,
   username,
   watermark,
+  showWatermarkOverlay = true,
   controls = true,
   muted = false,
   requireManualStart = false,
@@ -219,7 +222,7 @@ export function LivePlayer({
 
       clearStallTimer();
       setIsStartupLoading(false);
-      emit({ status: "error", message: "이 브라우저는 라이브 재생을 지원하지 않습니다." });
+      emit({ status: "error", message: UNSUPPORTED_HLS_MESSAGE });
     };
 
     const handlePlaying = () => {
@@ -293,7 +296,9 @@ export function LivePlayer({
   return (
     <div className="player-frame">
       <video key={videoMountKey} ref={videoRef} />
-      <WatermarkOverlay branchName={branchName} username={username} watermark={watermark} />
+      {showWatermarkOverlay ? (
+        <WatermarkOverlay branchName={branchName} username={username} watermark={watermark} />
+      ) : null}
       {showLoadingOverlay ? (
         <div className="player-loading-overlay">
           <div className="player-loading-content">

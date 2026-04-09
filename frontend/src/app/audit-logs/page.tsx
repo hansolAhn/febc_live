@@ -1,39 +1,32 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
+import { useAuditLogFilters } from "@/hooks/useAuditLogFilters";
 import * as mockApi from "@/lib/mock-api";
 
-type AuditLog = Awaited<ReturnType<typeof mockApi.fetchAuditLogs>>[number];
-type LoginAttemptLog = Awaited<ReturnType<typeof mockApi.fetchLoginAttemptLogs>>[number];
-
-function matchesObservedAt(value: string, observedAt: string) {
-  if (!observedAt) {
-    return true;
-  }
-
-  const current = new Date(value);
-  const target = new Date(observedAt);
-
-  if (Number.isNaN(current.getTime()) || Number.isNaN(target.getTime())) {
-    return false;
-  }
-
-  const gap = Math.abs(current.getTime() - target.getTime());
-  return gap <= 12 * 60 * 60 * 1000;
-}
-
 export default function AuditLogsPage() {
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [loginAttemptLogs, setLoginAttemptLogs] = useState<LoginAttemptLog[]>([]);
+  const [auditLogs, setAuditLogs] = useState<mockApi.AuditLogItem[]>([]);
+  const [loginAttemptLogs, setLoginAttemptLogs] = useState<mockApi.LoginAttemptLogItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const [observedAt, setObservedAt] = useState("");
-  const [selectedEvent, setSelectedEvent] = useState("ALL");
-  const [usernameKeyword, setUsernameKeyword] = useState("");
-  const [branchKeyword, setBranchKeyword] = useState("ALL");
-  const [ipKeyword, setIpKeyword] = useState("");
+  const {
+    observedAt,
+    setObservedAt,
+    selectedEvent,
+    setSelectedEvent,
+    usernameKeyword,
+    setUsernameKeyword,
+    branchKeyword,
+    setBranchKeyword,
+    ipKeyword,
+    setIpKeyword,
+    auditEventOptions,
+    branchOptions,
+    filteredAuditLogs,
+    filteredLoginAttemptLogs,
+    resetFilters
+  } = useAuditLogFilters(auditLogs, loginAttemptLogs);
 
   useEffect(() => {
     let cancelled = false;
@@ -69,100 +62,9 @@ export default function AuditLogsPage() {
     };
   }, []);
 
-  const auditEventOptions = useMemo(() => {
-    const unique = Array.from(new Set(auditLogs.map((log) => log.actionLabel))).sort();
-    return ["ALL", ...unique];
-  }, [auditLogs]);
-
-  const branchOptions = useMemo(() => {
-    const unique = Array.from(
-      new Set([
-        ...auditLogs.map((log) => log.branchLabel).filter(Boolean),
-        ...loginAttemptLogs.map((log) => log.branchLabel).filter(Boolean)
-      ])
-    ).sort();
-
-    return ["ALL", ...unique];
-  }, [auditLogs, loginAttemptLogs]);
-
-  const filteredAuditLogs = useMemo(() => {
-    const usernameNeedle = usernameKeyword.trim().toLowerCase();
-    const ipNeedle = ipKeyword.trim().toLowerCase();
-
-    return auditLogs.filter((log) => {
-      if (!matchesObservedAt(log.createdAt, observedAt)) {
-        return false;
-      }
-
-      if (selectedEvent !== "ALL" && log.actionLabel !== selectedEvent) {
-        return false;
-      }
-
-      if (branchKeyword !== "ALL" && log.branchLabel !== branchKeyword) {
-        return false;
-      }
-
-      if (usernameNeedle && !log.payloadSummary.toLowerCase().includes(usernameNeedle)) {
-        return false;
-      }
-
-      if (ipNeedle && !log.actorIp.toLowerCase().includes(ipNeedle)) {
-        return false;
-      }
-
-      return true;
-    });
-  }, [auditLogs, branchKeyword, ipKeyword, observedAt, selectedEvent, usernameKeyword]);
-
-  const filteredLoginAttemptLogs = useMemo(() => {
-    const usernameNeedle = usernameKeyword.trim().toLowerCase();
-    const ipNeedle = ipKeyword.trim().toLowerCase();
-
-    return loginAttemptLogs.filter((log) => {
-      if (!matchesObservedAt(log.createdAt, observedAt)) {
-        return false;
-      }
-
-      if (branchKeyword !== "ALL" && log.branchLabel !== branchKeyword) {
-        return false;
-      }
-
-      if (usernameNeedle && !log.username.toLowerCase().includes(usernameNeedle)) {
-        return false;
-      }
-
-      if (ipNeedle && !log.attemptIp.toLowerCase().includes(ipNeedle)) {
-        return false;
-      }
-
-      if (selectedEvent !== "ALL") {
-        const normalizedSelectedEvent = selectedEvent.replaceAll(" ", "");
-        const normalizedResult = log.resultLabel.replaceAll(" ", "");
-        const normalizedReason = log.failureReasonLabel.replaceAll(" ", "");
-
-        if (!normalizedResult.includes(normalizedSelectedEvent) && !normalizedReason.includes(normalizedSelectedEvent)) {
-          return false;
-        }
-      }
-
-      return true;
-    });
-  }, [branchKeyword, ipKeyword, loginAttemptLogs, observedAt, selectedEvent, usernameKeyword]);
-
-  function resetFilters() {
-    setObservedAt("");
-    setSelectedEvent("ALL");
-    setUsernameKeyword("");
-    setBranchKeyword("ALL");
-    setIpKeyword("");
-  }
-
   return (
     <div className="page-wrap">
-      <PageHeader
-        title="감사 로그"
-        subtitle="로그인 성공과 실패, 정책 변경, 로그아웃 같은 운영 이력을 조건별로 검색해서 확인합니다."
-      />
+      <PageHeader title="감사 로그" />
 
       {error ? <div className="panel">{error}</div> : null}
       {isLoading ? <div className="panel">감사 로그를 불러오는 중입니다...</div> : null}
@@ -216,7 +118,7 @@ export default function AuditLogsPage() {
               </div>
 
               <div className="filter-field filter-field-select">
-                <label className="label" htmlFor="audit-branch">지사</label>
+                <label className="label" htmlFor="audit-branch">소속</label>
                 <select
                   id="audit-branch"
                   className="input"
@@ -263,7 +165,7 @@ export default function AuditLogsPage() {
                   <tr>
                     <th>시각</th>
                     <th>이벤트</th>
-                    <th>지사</th>
+                    <th>소속</th>
                     <th>접속 IP</th>
                     <th>상세 설명</th>
                   </tr>
@@ -280,7 +182,7 @@ export default function AuditLogsPage() {
                   ))}
                   {filteredAuditLogs.length === 0 ? (
                     <tr>
-                      <td colSpan={5}>검색 조건에 맞는 운영 기록이 없습니다.</td>
+                      <td colSpan={5}>검색 조건과 맞는 운영 기록이 없습니다.</td>
                     </tr>
                   ) : null}
                 </tbody>
@@ -296,7 +198,7 @@ export default function AuditLogsPage() {
                   <tr>
                     <th>시각</th>
                     <th>아이디</th>
-                    <th>지사</th>
+                    <th>소속</th>
                     <th>시도 IP</th>
                     <th>결과</th>
                     <th>실패 사유</th>
@@ -315,7 +217,7 @@ export default function AuditLogsPage() {
                   ))}
                   {filteredLoginAttemptLogs.length === 0 ? (
                     <tr>
-                      <td colSpan={6}>검색 조건에 맞는 로그인 시도 기록이 없습니다.</td>
+                      <td colSpan={6}>검색 조건과 맞는 로그인 시도 기록이 없습니다.</td>
                     </tr>
                   ) : null}
                 </tbody>

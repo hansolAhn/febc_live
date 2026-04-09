@@ -1,4 +1,4 @@
-import { IsISO8601, IsOptional, IsString } from "class-validator";
+import { IsOptional, IsString } from "class-validator";
 
 export class FindLeakageCandidatesDto {
   @IsOptional()
@@ -11,13 +11,13 @@ export class FindLeakageCandidatesDto {
 
   @IsOptional()
   @IsString()
+  deviceId?: string;
+
+  @IsOptional()
+  @IsString()
   username?: string;
 
   @IsOptional()
-  @IsISO8601()
-  observedAtFrom?: string;
-
-  @IsOptional()
-  @IsISO8601()
-  observedAtTo?: string;
+  @IsString()
+  auditActionType?: string;
 }

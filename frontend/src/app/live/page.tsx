@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { LivePlayer, PlaybackState } from "@/components/LivePlayer";
 import { PageHeader } from "@/components/PageHeader";
 import { useAuth } from "@/components/providers/AuthProvider";
@@ -100,7 +100,6 @@ function buildBranchStatusMeta(options: {
 
 export default function LivePage() {
   const branchPlaybackWarmupSessionKey = "febc-live-branch-warmup-complete";
-  const pathname = usePathname();
   const router = useRouter();
   const { user } = useAuth();
   const userId = user?.id ?? null;
@@ -175,7 +174,7 @@ export default function LivePage() {
     }
     setPlayerRenderKey((current) => current + 1);
     previousLiveSignalRef.current = false;
-  }, [branchPlaybackWarmupSessionKey, isSuperAdmin, pathname]);
+  }, [branchPlaybackWarmupSessionKey, isSuperAdmin]);
 
   useEffect(() => {
     if (typeof window === "undefined" || isSuperAdmin || streamStatus === null) {
@@ -219,8 +218,8 @@ export default function LivePage() {
   }, [hasLiveSignal, isSuperAdmin, playbackAccess, playerState.status]);
 
   useEffect(() => {
-    if (!user || !userId || pathname !== "/live" || isSuperAdmin) return;
-    if (!hasLiveSignal || playbackAccess || requestedForCurrentStreamRef.current) return;
+    if (!user || !userId || isSuperAdmin) return;
+    if (!hasLiveSignal || playbackAccess) return;
 
     const accessToken = window.localStorage.getItem("febc_live_access_token");
     if (!accessToken) {
@@ -231,6 +230,10 @@ export default function LivePage() {
     let cancelled = false;
 
     const loadPlaybackAccess = async () => {
+      if (requestedForCurrentStreamRef.current) {
+        return;
+      }
+
       setError(null);
 
       try {
@@ -252,11 +255,15 @@ export default function LivePage() {
     };
 
     void loadPlaybackAccess();
+    const retryTimer = window.setInterval(() => {
+      void loadPlaybackAccess();
+    }, 3000);
 
     return () => {
       cancelled = true;
+      window.clearInterval(retryTimer);
     };
-  }, [hasLiveSignal, isSuperAdmin, pathname, playbackAccess, user, userId]);
+  }, [hasLiveSignal, isSuperAdmin, playbackAccess, user, userId]);
 
   useEffect(() => {
     if (typeof window === "undefined" || isSuperAdmin) {
@@ -282,8 +289,8 @@ export default function LivePage() {
   }, [
     branchManualStartDelayMs,
     branchPlaybackWarmupSessionKey,
-    hasLiveSignal,
     isSuperAdmin,
+    hasLiveSignal,
     playbackAccess
   ]);
 
@@ -329,6 +336,7 @@ export default function LivePage() {
             branchName={user.branchName}
             username={user.username}
             watermark={user.watermark}
+            showWatermarkOverlay={false}
             requireManualStart
             manualStartDelayMs={branchManualStartDelayMs}
             onPlaybackStateChange={setPlayerState}

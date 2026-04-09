@@ -27,7 +27,7 @@ services:
       PORT: 4000
       DATABASE_URL: postgres://${POSTGRES_USER:-febc_live}:${POSTGRES_PASSWORD:-change_me}@postgres:5432/${POSTGRES_DB:-febc_live}
       REDIS_URL: redis://redis:6379
-      STREAM_HLS_BASE_URL: /hls/live
+      STREAM_HLS_BASE_URL: http://localhost:${NGINX_HTTP_PORT:-8080}/hls/live
     ports:
       - "${BACKEND_PORT:-4000}:4000"
     depends_on:

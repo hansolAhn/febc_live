@@ -30,7 +30,10 @@ export class DevicesService {
         lastSeenAt: device.lastSeenAt ?? null,
         approvalUpdatedAt: device.approvalUpdatedAt ?? null,
         lastUserAgent: device.lastUserAgent ?? "",
-        isCurrentSession: false
+        isCurrentSession: false,
+        forensicLogoCode: device.forensicLogoCode,
+        forensicLogoProfile: device.forensicLogoProfile,
+        forensicLogoAsset: device.forensicLogoAsset
       };
     });
   }
@@ -50,6 +53,25 @@ export class DevicesService {
         deviceLabel: device.deviceLabel,
         fingerprintHash: device.fingerprintHash,
         action
+      }
+    });
+
+    return device;
+  }
+
+  restoreApproval(deviceId: string) {
+    const device = this.dataService.restoreDeviceApproval(deviceId);
+    if (!device) {
+      throw new NotFoundException("Device not found");
+    }
+
+    this.auditLogsService.create({
+      branchId: device.branchId,
+      userId: device.userId,
+      actionType: AuditActionType.DEVICE_RESTORED,
+      payload: {
+        deviceId: device.id,
+        deviceLabel: device.deviceLabel
       }
     });
 

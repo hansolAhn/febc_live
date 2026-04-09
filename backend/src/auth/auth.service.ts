@@ -30,29 +30,48 @@ export class AuthService {
     const ipAddress = this.extractIp(request);
     const userAgent = request.headers["user-agent"] ?? "unknown";
     const deviceSystemName = this.summarizeUserAgent(String(userAgent));
-    const branch = this.dataService.findBranchByCode(dto.branchCode);
+    const user = this.dataService.findUserByUsernameGlobal(dto.username);
+    const branch = user ? this.dataService.getBranches().find((item) => item.id === user.branchId) : null;
 
-    if (!branch) {
-      this.dataService.addLoginAttemptLog({ username: dto.username, attemptIp: ipAddress, succeeded: false, failureReason: "BRANCH_NOT_FOUND" });
-      this.securityEventsService.create({
-        eventType: SecurityEventType.LOGIN_FAILURE,
-        severity: "low",
-        detail: { reason: "BRANCH_NOT_FOUND", username: dto.username, ipAddress }
+    if (!user) {
+      this.dataService.addLoginAttemptLog({
+        branchId: undefined,
+        username: dto.username,
+        attemptIp: ipAddress,
+        succeeded: false,
+        failureReason: "INVALID_CREDENTIALS"
       });
-      throw new AuthenticationException("Invalid branch or user");
-    }
-
-    const user = this.dataService.findUserByUsername(branch.id, dto.username);
-    if (!user || user.passwordHash !== dto.password) {
-      this.dataService.addLoginAttemptLog({ branchId: branch.id, username: dto.username, attemptIp: ipAddress, succeeded: false, failureReason: "INVALID_CREDENTIALS" });
       this.securityEventsService.create({
-        branchId: branch.id,
-        userId: user?.id,
+        branchId: undefined,
+        userId: undefined,
         eventType: SecurityEventType.LOGIN_FAILURE,
         severity: "low",
         detail: { reason: "INVALID_CREDENTIALS", username: dto.username, ipAddress }
       });
-      throw new AuthenticationException("Invalid branch or user");
+      throw new AuthenticationException("아이디가 올바르지 않습니다.");
+    }
+
+    if (!branch) {
+      throw new AuthenticationException("소속 정보를 찾을 수 없습니다.");
+    }
+
+    if (user.passwordHash !== dto.password) {
+      this.dataService.addLoginAttemptLog({
+        branchId: branch.id,
+        userId: user.id,
+        username: dto.username,
+        attemptIp: ipAddress,
+        succeeded: false,
+        failureReason: "INVALID_CREDENTIALS"
+      });
+      this.securityEventsService.create({
+        branchId: branch.id,
+        userId: user.id,
+        eventType: SecurityEventType.LOGIN_FAILURE,
+        severity: "low",
+        detail: { reason: "INVALID_CREDENTIALS", username: dto.username, ipAddress }
+      });
+      throw new AuthenticationException("비밀번호가 올바르지 않습니다.");
     }
 
     if (!user.isActive) {
@@ -71,14 +90,21 @@ export class AuthService {
         severity: "high",
         detail: { reason: "ACCOUNT_BLOCKED", username: dto.username, ipAddress }
       });
-      throw new PolicyViolationException("차단된 계정입니다. 최고 관리자에게 문의하세요.");
+      throw new PolicyViolationException("차단된 계정입니다. 최고 관리자에게 문의해 주세요.");
     }
 
     const resolvedPolicy = this.securityPolicyService.resolvePolicy(branch.id, user.id);
     const allowedIps = this.securityPolicyService.getAllowedIps(branch.id, user.id);
 
     if (allowedIps.length > 0 && !this.securityPolicyService.isIpAllowed(ipAddress, allowedIps)) {
-      this.dataService.addLoginAttemptLog({ branchId: branch.id, userId: user.id, username: dto.username, attemptIp: ipAddress, succeeded: false, failureReason: "DISALLOWED_IP" });
+      this.dataService.addLoginAttemptLog({
+        branchId: branch.id,
+        userId: user.id,
+        username: dto.username,
+        attemptIp: ipAddress,
+        succeeded: false,
+        failureReason: "DISALLOWED_IP"
+      });
       this.securityEventsService.create({
         branchId: branch.id,
         userId: user.id,
@@ -86,13 +112,20 @@ export class AuthService {
         severity: "high",
         detail: { ipAddress, username: dto.username }
       });
-      throw new PolicyViolationException("IP is not allowed by policy");
+      throw new PolicyViolationException("허용되지 않은 IP입니다.");
     }
 
     if (resolvedPolicy.otpRequired) {
       const verified = await this.otpService.verifyLoginOtp(user.phone, dto.otpCode);
       if (!verified) {
-        this.dataService.addLoginAttemptLog({ branchId: branch.id, userId: user.id, username: dto.username, attemptIp: ipAddress, succeeded: false, failureReason: "OTP_REQUIRED_OR_INVALID" });
+        this.dataService.addLoginAttemptLog({
+          branchId: branch.id,
+          userId: user.id,
+          username: dto.username,
+          attemptIp: ipAddress,
+          succeeded: false,
+          failureReason: "OTP_REQUIRED_OR_INVALID"
+        });
         this.securityEventsService.create({
           branchId: branch.id,
           userId: user.id,
@@ -100,7 +133,7 @@ export class AuthService {
           severity: "medium",
           detail: { reason: "OTP_REQUIRED_OR_INVALID", username: dto.username, ipAddress }
         });
-        throw new PolicyViolationException("OTP verification required");
+        throw new PolicyViolationException("OTP 인증번호가 올바르지 않습니다.");
       }
     }
 
@@ -123,7 +156,7 @@ export class AuthService {
         severity: "high",
         detail: { deviceFingerprint: dto.deviceFingerprint, deviceLabel: dto.deviceLabel, ipAddress }
       });
-      throw new PolicyViolationException("차단된 기기입니다. 관리자에게 문의하세요.");
+      throw new PolicyViolationException("차단된 기기입니다. 관리자에게 문의해 주세요.");
     }
 
     if (isMasterAccount && !device.isTrusted) {
@@ -175,7 +208,7 @@ export class AuthService {
             }
           });
 
-          throw new PolicyViolationException("이미 이 지사 계정으로 로그인 중입니다. 기존 세션을 종료한 후 다시 시도하세요.");
+          throw new PolicyViolationException("이미 이 계정으로 로그인 중입니다. 기존 세션을 종료한 뒤 다시 시도해 주세요.");
         }
       }
 
@@ -230,26 +263,36 @@ export class AuthService {
         roleCode: this.dataService.getRoles().find((role) => role.id === user.roleId)?.code ?? "VIEWER"
       },
       effectivePolicy: resolvedPolicy,
-      watermark: this.watermarkService.getSessionWatermark(branch.code, session.sessionKey)
+      watermark: this.watermarkService.getSessionWatermark(branch.code, session.sessionKey, {
+        deviceId: device.id,
+        deviceFingerprintHash: device.fingerprintHash,
+        deviceLabel: device.deviceLabel,
+        logoVariantProfile: device.forensicLogoProfile,
+        logoVariantSvgTemplate: device.forensicLogoAsset?.svgTemplate
+      })
     };
   }
 
   async requestLoginOtp(dto: RequestLoginOtpDto, request: Request) {
     const ipAddress = this.extractIp(request);
-    const branch = this.dataService.findBranchByCode(dto.branchCode);
+    const user = this.dataService.findUserByUsernameGlobal(dto.username);
+    const branch = user ? this.dataService.getBranches().find((item) => item.id === user.branchId) : null;
 
-    if (!branch) {
-      throw new AuthenticationException("Invalid branch or user");
+    if (!user) {
+      throw new AuthenticationException("아이디가 올바르지 않습니다.");
     }
 
-    const user = this.dataService.findUserByUsername(branch.id, dto.username);
-    if (!user || user.passwordHash !== dto.password) {
-      throw new AuthenticationException("Invalid branch or user");
+    if (!branch) {
+      throw new AuthenticationException("소속 정보를 찾을 수 없습니다.");
+    }
+
+    if (user.passwordHash !== dto.password) {
+      throw new AuthenticationException("비밀번호가 올바르지 않습니다.");
     }
 
     const allowedIps = this.securityPolicyService.getAllowedIps(branch.id, user.id);
     if (allowedIps.length > 0 && !this.securityPolicyService.isIpAllowed(ipAddress, allowedIps)) {
-      throw new PolicyViolationException("IP is not allowed by policy");
+      throw new PolicyViolationException("허용되지 않은 IP입니다.");
     }
 
     const result = await this.otpService.sendLoginOtp(user.phone);
@@ -282,6 +325,8 @@ export class AuthService {
     const branch = this.dataService.getBranches().find((item) => item.id === session.branchId);
     const role = this.dataService.getRoles().find((item) => item.id === user.roleId);
 
+    const sessionDevice = session.deviceId ? this.dataService.findDeviceById(session.deviceId) : null;
+
     return {
       id: user.id,
       username: user.username,
@@ -295,7 +340,13 @@ export class AuthService {
         status: session.status
       },
       devices: this.dataService.getDevicesByUser(user.id),
-      watermark: this.watermarkService.getSessionWatermark(branch?.code ?? "unknown", session.sessionKey)
+      watermark: this.watermarkService.getSessionWatermark(branch?.code ?? "unknown", session.sessionKey, {
+        deviceId: session.deviceId,
+        deviceFingerprintHash: sessionDevice?.fingerprintHash,
+        deviceLabel: session.deviceLabel ?? sessionDevice?.deviceLabel,
+        logoVariantProfile: sessionDevice?.forensicLogoProfile,
+        logoVariantSvgTemplate: sessionDevice?.forensicLogoAsset?.svgTemplate
+      })
     };
   }
 
@@ -361,6 +412,6 @@ export class AuthService {
             ? "macOS"
             : "OS";
 
-    return `${browser} ${os} 자동 감지`;
+    return `${browser} ${os}`;
   }
 }

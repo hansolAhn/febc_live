@@ -19,4 +19,9 @@ export class DevicesController {
   block(@Param("deviceId") deviceId: string) {
     return this.devicesService.updateApproval(deviceId, "block");
   }
+
+  @Patch(":deviceId/restore")
+  restore(@Param("deviceId") deviceId: string) {
+    return this.devicesService.restoreApproval(deviceId);
+  }
 }

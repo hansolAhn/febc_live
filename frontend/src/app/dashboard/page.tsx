@@ -96,6 +96,7 @@ function buildStatusMeta(playerState: PlaybackState, streamStatus: StreamStatus 
 
 export default function DashboardPage() {
   const dashboardWarmupSessionKey = "febc-dashboard-admin-warmup-complete";
+  const dashboardRefreshIntervalMs = 5000;
   const router = useRouter();
   const { user } = useAuth();
   const userId = user?.id ?? null;
@@ -124,25 +125,37 @@ export default function DashboardPage() {
     let cancelled = false;
 
     async function loadDashboardData() {
-      const [nextMetrics, nextEvents, nextSessions] = await Promise.all([
-        mockApi.fetchDashboardMetrics(),
-        mockApi.fetchSecurityEvents(),
-        mockApi.fetchSessions()
-      ]);
+      try {
+        const [nextMetrics, nextEvents, nextSessions] = await Promise.all([
+          mockApi.fetchDashboardMetrics(),
+          mockApi.fetchSecurityEvents(),
+          mockApi.fetchSessions()
+        ]);
 
-      if (!cancelled) {
-        setMetrics(nextMetrics);
-        setEvents(nextEvents);
-        setSessions(nextSessions);
+        if (!cancelled) {
+          setMetrics(nextMetrics);
+          setEvents(nextEvents);
+          setSessions(nextSessions);
+        }
+      } catch {
+        if (!cancelled) {
+          setMetrics({ activeBranches: 0, activeSessions: 0, highRiskEvents: 0, trackedDevices: 0 });
+          setEvents([]);
+          setSessions([]);
+        }
       }
     }
 
     void loadDashboardData();
+    const timer = window.setInterval(() => {
+      void loadDashboardData();
+    }, dashboardRefreshIntervalMs);
 
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
-  }, [roleCode, router, user, userId]);
+  }, [dashboardRefreshIntervalMs, roleCode, router, user, userId]);
 
   useEffect(() => {
     if (typeof window === "undefined" || roleCode !== "SUPER_ADMIN") {
@@ -218,7 +231,7 @@ export default function DashboardPage() {
       return;
     }
 
-    if (playbackAccess || requestedPreviewAccessRef.current) {
+    if (playbackAccess) {
       return;
     }
 
@@ -234,6 +247,10 @@ export default function DashboardPage() {
     let cancelled = false;
 
     async function loadPlaybackAccess() {
+      if (requestedPreviewAccessRef.current) {
+        return;
+      }
+
       try {
         const response = await mockApi.fetchPlaybackAccess(resolvedAccessToken, "main");
         if (!cancelled) {
@@ -253,9 +270,13 @@ export default function DashboardPage() {
     }
 
     void loadPlaybackAccess();
+    const retryTimer = window.setInterval(() => {
+      void loadPlaybackAccess();
+    }, 3000);
 
     return () => {
       cancelled = true;
+      window.clearInterval(retryTimer);
     };
   }, [hasLiveSignal, playbackAccess, roleCode, user, userId]);
 
@@ -296,17 +317,16 @@ export default function DashboardPage() {
 
   return (
     <div className="page-wrap">
-      <PageHeader title="관리자 대시보드" subtitle="운영 현황, 최근 보안 이벤트, 현재 송출 상태를 한 화면에서 확인합니다." />
+      <PageHeader title="관리자 대시보드" />
 
       <div className="metrics">
         <StatCard
           label="현재 접속 현황"
           value={String(metrics.activeSessions)}
-          detail={`접속 지사 ${metrics.activeBranches}곳 / 사용 중 세션 ${metrics.activeSessions}개`}
           href="/security-events?tab=sessions"
         />
-        <StatCard label="고위험 보안 알림" value={String(metrics.highRiskEvents)} detail="즉시 확인이 필요한 경고 수" href="/security-events?tab=events" />
-        <StatCard label="관리 중인 기기" value={String(metrics.trackedDevices)} detail="확인 또는 검토 대상 기기 수" href="/security-events?tab=devices" />
+        <StatCard label="고위험 보안 알림" value={String(metrics.highRiskEvents)} href="/security-events?tab=events" />
+        <StatCard label="관리 중인 기기" value={String(metrics.trackedDevices)} href="/account-device-management?tab=devices" />
       </div>
 
       <div className="grid two dashboard-main-grid">
@@ -315,7 +335,6 @@ export default function DashboardPage() {
             <div className="panel-title">라이브 상태</div>
             <span className={previewMeta.className}>{previewMeta.label}</span>
           </div>
-          <div className="stream-status-copy">{previewMeta.message}</div>
           {previewAccess ? (
             <LivePlayer
               key={`dashboard-preview-${playerRenderKey}-${previewAccess.expiresAt}`}
@@ -323,6 +342,7 @@ export default function DashboardPage() {
               branchName={user.branchName}
               username={user.username}
               watermark={user.watermark}
+              showWatermarkOverlay={false}
               controls
               muted={false}
               requireManualStart

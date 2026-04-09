@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import { AuditActionType, SecurityEventType, SessionStatus, UserRole } from "../common/enums";
+import { buildLogoFingerprintMeta, LogoVariantAsset, LogoVariantProfile } from "../watermark/logo-fingerprint.util";
 
 type RoleRecord = { id: string; code: UserRole; name: string };
 type BranchRecord = { id: string; code: string; name: string; isActive: boolean };
@@ -30,6 +31,88 @@ type EventLogoAssignmentRecord = {
   sessionCode: string;
   visibleOverlayPayload: Record<string, unknown>;
   hiddenOverlayPayload: Record<string, unknown>;
+};
+type DeviceRecord = {
+  id: string;
+  userId: string;
+  branchId: string;
+  fingerprintHash: string;
+  deviceLabel: string;
+  systemName: string;
+  lastIp: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  approvalUpdatedAt: string;
+  lastUserAgent: string;
+  isTrusted: boolean;
+  isBlocked: boolean;
+  forensicLogoCode: string;
+  forensicLogoProfile: LogoVariantProfile;
+  forensicLogoAsset: LogoVariantAsset;
+};
+
+const DEVICE_LOGO_ASSET_REGISTRY: Record<
+  string,
+  {
+    assetPath?: string;
+    displayName?: string;
+    comparisonHints?: string[];
+  }
+> = {
+  "device-1": {
+    assetPath: "/forensic-logo-assets/seoul-hq-branch-admin.svg",
+    displayName: "서울본사 기준 로고",
+    comparisonHints: ["기준 원본 로고", "지사별 실제 로고 자산 교체 예정"]
+  },
+  "device-2": {
+    assetPath: "/forensic-logo-assets/busan-viewer.svg",
+    displayName: "부산지사 기준 로고",
+    comparisonHints: ["기준 원본 로고", "지사별 실제 로고 자산 교체 예정"]
+  }
+};
+
+const DEVICE_LOGO_ASSET_OVERRIDES: Record<
+  string,
+  {
+    assetPath?: string;
+    displayName?: string;
+    comparisonHints?: string[];
+    profileOverrides?: {
+      f?: Partial<LogoVariantProfile["slices"]["f"]>;
+      e?: Partial<LogoVariantProfile["slices"]["e"]>;
+      b?: Partial<LogoVariantProfile["slices"]["b"]>;
+      c?: Partial<LogoVariantProfile["slices"]["c"]>;
+      box?: Partial<LogoVariantProfile["slices"]["box"]>;
+    };
+  }
+> = {
+  "device-1": {
+    assetPath: "/forensic-logo-assets/seoul-hq-branch-admin.svg",
+    displayName: "Seoul HQ / branch_admin reference logo",
+    comparisonHints: ["f slightly larger", "c slightly tighter"],
+    profileOverrides: {
+      f: { scaleX: 1.038, scaleY: 1.034, translateX: 0.7, translateY: -0.4, skewX: 0.3 },
+      c: { scaleX: 0.968, scaleY: 0.982, translateX: -1.15, translateY: 0.2, skewX: -0.2 }
+    }
+  },
+  "device-2": {
+    assetPath: "/forensic-logo-assets/busan-viewer.svg",
+    displayName: "Busan / viewer reference logo",
+    comparisonHints: ["e slightly wider", "b slightly slimmer"],
+    profileOverrides: {
+      e: { scaleX: 1.042, scaleY: 1.008, translateX: 0.95, translateY: -0.1, skewX: 0.2 },
+      b: { scaleX: 0.965, scaleY: 0.994, translateX: -0.9, translateY: 0.55, skewX: -0.35 }
+    }
+  },
+  "device-3": {
+    assetPath: "/forensic-logo-assets/seoul-hq-master-admin.svg",
+    displayName: "Seoul HQ / master_admin reference logo",
+    comparisonHints: ["e slightly larger", "b slightly taller"],
+    profileOverrides: {
+      e: { scaleX: 1.026, scaleY: 1.028, translateX: 0.45, translateY: -0.55, skewX: -0.15 },
+      b: { scaleX: 0.992, scaleY: 1.036, translateX: 0.2, translateY: -0.95, skewX: 0.18 }
+    }
+  }
 };
 
 @Injectable()
@@ -120,8 +203,8 @@ export class InMemoryDataService {
     { id: "user-ip-1", userId: "user-1", cidr: "10.0.0.0/8", description: "HQ operator" }
   ];
 
-  private readonly devices = [
-    {
+  private readonly devices: DeviceRecord[] = [
+    this.createDeviceRecord({
       id: "device-1",
       userId: "user-1",
       branchId: "branch-seoul",
@@ -135,8 +218,8 @@ export class InMemoryDataService {
       lastUserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
       isTrusted: true,
       isBlocked: false
-    },
-    {
+    }),
+    this.createDeviceRecord({
       id: "device-2",
       userId: "user-2",
       branchId: "branch-busan",
@@ -150,7 +233,22 @@ export class InMemoryDataService {
       lastUserAgent: "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
       isTrusted: false,
       isBlocked: false
-    }
+    }),
+    this.createDeviceRecord({
+      id: "device-3",
+      userId: "user-master-1",
+      branchId: "branch-seoul",
+      fingerprintHash: "device-fp-003",
+      deviceLabel: "HQ Master Chrome Windows",
+      systemName: "Chrome Windows 자동 감지",
+      lastIp: "172.18.0.1",
+      firstSeenAt: "2026-03-20T08:00:00.000Z",
+      lastSeenAt: "2026-03-27T15:51:07.000Z",
+      approvalUpdatedAt: "2026-03-20T08:10:00.000Z",
+      lastUserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+      isTrusted: true,
+      isBlocked: false
+    })
   ];
 
   private readonly branchLogoProfiles: BranchLogoProfileRecord[] = [
@@ -166,9 +264,9 @@ export class InMemoryDataService {
         opacity: 0.92
       },
       hiddenWatermarkConfig: {
-        embeddingMode: "metadata-placeholder",
-        featureVector: ["ring-gap-a", "crossbar-offset-1"],
-        extractorVersion: 1
+        embeddingMode: "logo-template-v2",
+        featureVector: ["logo-branch-template", "logo-device-template"],
+        extractorVersion: 2
       },
       isActive: true
     },
@@ -184,9 +282,9 @@ export class InMemoryDataService {
         opacity: 0.92
       },
       hiddenWatermarkConfig: {
-        embeddingMode: "metadata-placeholder",
-        featureVector: ["ring-gap-b", "crossbar-offset-2"],
-        extractorVersion: 1
+        embeddingMode: "logo-template-v2",
+        featureVector: ["logo-branch-template", "logo-device-template"],
+        extractorVersion: 2
       },
       isActive: true
     }
@@ -204,8 +302,8 @@ export class InMemoryDataService {
         showSessionCode: true
       },
       hiddenOverlayPayload: {
-        generatorStatus: "pending-real-generator",
-        notes: "metadata only in v1"
+        generatorStatus: "device-template-generator",
+        notes: "branch + device logo template"
       }
     }
   ];
@@ -227,6 +325,19 @@ export class InMemoryDataService {
   private readonly securityEvents: Array<Record<string, unknown>> = [];
   private readonly auditLogs: Array<Record<string, unknown>> = [];
 
+  private createDeviceRecord(input: Omit<DeviceRecord, "forensicLogoCode" | "forensicLogoProfile" | "forensicLogoAsset">): DeviceRecord {
+    const branch = this.branches.find((item) => item.id === input.branchId);
+    const assetOptions = { ...DEVICE_LOGO_ASSET_REGISTRY[input.id], ...DEVICE_LOGO_ASSET_OVERRIDES[input.id] };
+    const fingerprintMeta = buildLogoFingerprintMeta(branch?.code ?? "unknown", input.fingerprintHash, input.id, assetOptions);
+
+    return {
+      ...input,
+      forensicLogoCode: fingerprintMeta.code,
+      forensicLogoProfile: fingerprintMeta.profile,
+      forensicLogoAsset: fingerprintMeta.asset
+    };
+  }
+
   getRoles() {
     return this.roles;
   }
@@ -236,7 +347,20 @@ export class InMemoryDataService {
   }
 
   findBranchByCode(branchCode: string) {
-    return this.branches.find((branch) => branch.code === branchCode);
+    const normalizedBranchCode = branchCode.trim();
+    return this.branches.find((branch) => branch.code === normalizedBranchCode);
+  }
+
+  createBranch(input: { code: string; name?: string; isActive?: boolean }) {
+    const normalizedCode = input.code.trim();
+    const created = {
+      id: randomUUID(),
+      code: normalizedCode,
+      name: input.name?.trim() || normalizedCode,
+      isActive: input.isActive ?? true
+    };
+    this.branches.push(created);
+    return created;
   }
 
   getUsers() {
@@ -245,6 +369,11 @@ export class InMemoryDataService {
 
   findUserByUsername(branchId: string, username: string) {
     return this.users.find((user) => user.branchId === branchId && user.username === username);
+  }
+
+  findUserByUsernameGlobal(username: string) {
+    const normalizedUsername = username.trim();
+    return this.users.find((user) => user.username === normalizedUsername);
   }
 
   findUserById(userId: string) {
@@ -258,6 +387,54 @@ export class InMemoryDataService {
     }
 
     user.isActive = isActive;
+    return user;
+  }
+
+  createUser(input: {
+    branchId: string;
+    roleId: string;
+    username: string;
+    passwordHash: string;
+    phone: string;
+    isActive?: boolean;
+  }) {
+    const created = {
+      id: randomUUID(),
+      branchId: input.branchId,
+      roleId: input.roleId,
+      username: input.username,
+      passwordHash: input.passwordHash,
+      phone: input.phone,
+      isActive: input.isActive ?? true
+    };
+    this.users.unshift(created);
+    return created;
+  }
+
+  updateUserPassword(userId: string, passwordHash: string) {
+    const user = this.findUserById(userId);
+    if (!user) {
+      return null;
+    }
+
+    user.passwordHash = passwordHash;
+    return user;
+  }
+
+  updateUserProfile(userId: string, updates: { roleId?: string; phone?: string }) {
+    const user = this.findUserById(userId);
+    if (!user) {
+      return null;
+    }
+
+    if (updates.roleId) {
+      user.roleId = updates.roleId;
+    }
+
+    if (updates.phone !== undefined) {
+      user.phone = updates.phone;
+    }
+
     return user;
   }
 
@@ -285,12 +462,15 @@ export class InMemoryDataService {
     return this.userSecurityPolicies.find((policy) => policy.userId === userId);
   }
 
-  updateUserSecurityPolicy(userId: string, payload: {
-    singleSessionOnly?: boolean;
-    otpRequired?: boolean;
-    deviceRegistrationRequired?: boolean;
-    forensicWatermarkEnabled?: boolean;
-  }) {
+  updateUserSecurityPolicy(
+    userId: string,
+    payload: {
+      singleSessionOnly?: boolean;
+      otpRequired?: boolean;
+      deviceRegistrationRequired?: boolean;
+      forensicWatermarkEnabled?: boolean;
+    }
+  ) {
     const found = this.userSecurityPolicies.find((policy) => policy.userId === userId);
     if (found) {
       Object.assign(found, payload);
@@ -306,12 +486,15 @@ export class InMemoryDataService {
     return created;
   }
 
-  updateBranchSecurityPolicy(branchId: string, payload: {
-    singleSessionOnly?: boolean;
-    otpRequired?: boolean;
-    deviceRegistrationRequired?: boolean;
-    forensicWatermarkEnabled?: boolean;
-  }) {
+  updateBranchSecurityPolicy(
+    branchId: string,
+    payload: {
+      singleSessionOnly?: boolean;
+      otpRequired?: boolean;
+      deviceRegistrationRequired?: boolean;
+      forensicWatermarkEnabled?: boolean;
+    }
+  ) {
     const found = this.branchSecurityPolicies.find((policy) => policy.branchId === branchId);
     if (found) {
       Object.assign(found, payload);
@@ -359,10 +542,18 @@ export class InMemoryDataService {
       existing.lastSeenAt = now;
       existing.lastUserAgent = input.userAgent;
       existing.systemName = input.systemName || existing.systemName;
+      if (!existing.forensicLogoCode || !existing.forensicLogoProfile || !existing.forensicLogoAsset) {
+        const branch = this.branches.find((item) => item.id === existing.branchId);
+        const assetOptions = { ...DEVICE_LOGO_ASSET_REGISTRY[existing.id], ...DEVICE_LOGO_ASSET_OVERRIDES[existing.id] };
+        const fingerprintMeta = buildLogoFingerprintMeta(branch?.code ?? "unknown", existing.fingerprintHash, existing.id, assetOptions);
+        existing.forensicLogoCode = fingerprintMeta.code;
+        existing.forensicLogoProfile = fingerprintMeta.profile;
+        existing.forensicLogoAsset = fingerprintMeta.asset;
+      }
       return existing;
     }
 
-    const created = {
+    const created = this.createDeviceRecord({
       id: randomUUID(),
       userId: input.userId,
       branchId: input.branchId,
@@ -376,7 +567,7 @@ export class InMemoryDataService {
       lastUserAgent: input.userAgent,
       isTrusted: false,
       isBlocked: false
-    };
+    });
     this.devices.push(created);
     return created;
   }
@@ -406,6 +597,19 @@ export class InMemoryDataService {
       device.isTrusted = false;
       device.isBlocked = true;
     }
+    device.approvalUpdatedAt = new Date().toISOString();
+
+    return device;
+  }
+
+  restoreDeviceApproval(deviceId: string) {
+    const device = this.findDeviceById(deviceId);
+    if (!device) {
+      return null;
+    }
+
+    device.isTrusted = true;
+    device.isBlocked = false;
     device.approvalUpdatedAt = new Date().toISOString();
 
     return device;
