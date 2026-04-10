@@ -54,6 +54,7 @@ button, input { font: inherit; }
 .content-area { padding: 28px; }
 .page-header, .toggle-row, .topbar-card { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
 .panel-header-inline { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.panel-status-group { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .page-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .page-title { font-size: 32px; }
 .page-subtitle { margin: 8px 0 0; }

@@ -36,8 +36,8 @@ export class StreamService {
   private readonly signingSecret: string;
   private readonly internalHlsBaseUrl: string;
   private readonly viewerHeartbeatWindowMs = 20_000;
-  private readonly playbackReadyWindowMs = 6_000;
-  private readonly publishWarmupWindowMs = 6_000;
+  private readonly playbackReadyWindowMs = 15_000;
+  private readonly publishWarmupWindowMs = 15_000;
   private readonly runtimeStates = new Map<string, StreamRuntimeState>();
 
   constructor(
@@ -45,8 +45,10 @@ export class StreamService {
     private readonly sessionsService: SessionsService
   ) {
     this.tokenTtlSeconds = Number(this.configService.get<string>("STREAM_TOKEN_TTL_SECONDS") ?? "300");
-    this.signingSecret = this.configService.get<string>("FORENSIC_WATERMARK_SECRET") ?? "replace-with-watermark-secret";
-    this.internalHlsBaseUrl = this.configService.get<string>("STREAM_INTERNAL_HLS_BASE_URL") ?? "http://srs:8080/live";
+    this.signingSecret =
+      this.configService.get<string>("FORENSIC_WATERMARK_SECRET") ?? "replace-with-watermark-secret";
+    this.internalHlsBaseUrl =
+      this.configService.get<string>("STREAM_INTERNAL_HLS_BASE_URL") ?? "http://srs:8080/live";
   }
 
   validateHook(event: "publish" | "play" | "stop", stream: string) {

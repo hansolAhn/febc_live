@@ -26,9 +26,9 @@ type LivePlayerProps = {
   onPlaybackStateChange?: (state: PlaybackState) => void;
 };
 
-const HLS_ERROR_MESSAGE = "재생 오류가 발생했습니다. 다시 시도해 주세요.";
+const HLS_ERROR_MESSAGE = "재생 중 오류가 발생했습니다. 다시 시도해 주세요.";
 const UNSUPPORTED_HLS_MESSAGE = "이 브라우저는 라이브 재생을 지원하지 않습니다.";
-const STARTUP_STALL_TIMEOUT_MS = 10000;
+const STARTUP_STALL_TIMEOUT_MS = 10_000;
 
 export function LivePlayer({
   src,
@@ -57,13 +57,15 @@ export function LivePlayer({
   const [lastErrorMessage, setLastErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    startedRef.current = !requireManualStart;
-    hasPlayedRef.current = false;
-    setHasStarted(!requireManualStart);
-    setManualStartReady(!requireManualStart || manualStartDelayMs <= 0);
+    const preserveStartedPlayback = startedRef.current || hasPlayedRef.current;
+    const nextHasStarted = preserveStartedPlayback ? true : !requireManualStart;
+
+    startedRef.current = nextHasStarted;
+    hasPlayedRef.current = preserveStartedPlayback ? hasPlayedRef.current : false;
+    setHasStarted(nextHasStarted);
+    setManualStartReady(preserveStartedPlayback ? true : !requireManualStart || manualStartDelayMs <= 0);
     setIsStartupLoading(false);
     setLastErrorMessage(null);
-    setVideoMountKey(0);
   }, [manualStartDelayMs, requireManualStart, src]);
 
   useEffect(() => {
@@ -248,14 +250,7 @@ export function LivePlayer({
     };
 
     const handleError = () => {
-      if (!hasPlayedRef.current && startedRef.current) {
-        clearStallTimer();
-        setIsStartupLoading(false);
-        setLastErrorMessage(HLS_ERROR_MESSAGE);
-        emit({ status: "error", message: HLS_ERROR_MESSAGE });
-        return;
-      }
-
+      clearStallTimer();
       setIsStartupLoading(false);
       setLastErrorMessage(HLS_ERROR_MESSAGE);
       emit({ status: "error", message: HLS_ERROR_MESSAGE });

@@ -1,10 +1,11 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LivePlayer, PlaybackState } from "@/components/LivePlayer";
 import { PageHeader } from "@/components/PageHeader";
 import { useAuth } from "@/components/providers/AuthProvider";
+import { useAutoRefreshingPlaybackAccess } from "@/hooks/useAutoRefreshingPlaybackAccess";
 import * as mockApi from "@/lib/mock-api";
 
 type PlaybackAccess = Awaited<ReturnType<typeof mockApi.fetchPlaybackAccess>>;
@@ -119,6 +120,7 @@ export default function LivePage() {
   const isPublishing = Boolean(streamStatus?.isPublishing);
   const playbackAvailable = Boolean(streamStatus?.playbackAvailable);
   const hasLiveSignal = isPublishing || playbackAvailable;
+  const accessToken = typeof window === "undefined" ? null : window.localStorage.getItem("febc_live_access_token");
 
   useEffect(() => {
     if (isSuperAdmin) {
@@ -223,7 +225,7 @@ export default function LivePage() {
 
     const accessToken = window.localStorage.getItem("febc_live_access_token");
     if (!accessToken) {
-      setError("로그인 세션을 찾을 수 없습니다.");
+      setError("濡쒓렇???몄뀡??李얠쓣 ???놁뒿?덈떎.");
       return;
     }
 
@@ -248,8 +250,8 @@ export default function LivePage() {
         if (!cancelled) {
           requestedForCurrentStreamRef.current = false;
           setPlaybackAccess(null);
-          setPlayerState({ status: "error", message: "재생 권한을 불러오지 못했습니다." });
-          setError(loadError instanceof Error ? loadError.message : "재생 권한을 불러오지 못했습니다.");
+          setPlayerState({ status: "error", message: "?ъ깮 沅뚰븳??遺덈윭?ㅼ? 紐삵뻽?듬땲??" });
+          setError(loadError instanceof Error ? loadError.message : "?ъ깮 沅뚰븳??遺덈윭?ㅼ? 紐삵뻽?듬땲??");
         }
       }
     };
@@ -300,6 +302,20 @@ export default function LivePage() {
     }
   }, [playerState.status]);
 
+  useAutoRefreshingPlaybackAccess({
+    enabled: !isSuperAdmin && hasLiveSignal && Boolean(playbackAccess),
+    accessToken,
+    playbackAccess,
+    onRefreshSuccess(nextAccess) {
+      requestedForCurrentStreamRef.current = true;
+      setPlaybackAccess(nextAccess);
+      setError(null);
+    },
+    onRefreshError(message) {
+      setError(message);
+    }
+  });
+
   const statusMeta = useMemo(
     () =>
       buildBranchStatusMeta({
@@ -326,12 +342,14 @@ export default function LivePage() {
       <div className="panel">
         <div className="panel-header-inline">
           <div className="panel-title">라이브 화면</div>
-          <span className={statusMeta.className}>{statusMeta.label}</span>
+          <div className="panel-status-group">
+            <span className={statusMeta.className}>{statusMeta.label}</span>
+          </div>
         </div>
         <div className="stream-status-copy">{statusMeta.message}</div>
         {resolvedBranchPlaybackAccess ? (
           <LivePlayer
-            key={`live-branch-${playerRenderKey}-${resolvedBranchPlaybackAccess.expiresAt}`}
+            key={`live-branch-${playerRenderKey}`}
             src={resolvedBranchPlaybackAccess.hlsUrl}
             branchName={user.branchName}
             username={user.username}
@@ -346,3 +364,4 @@ export default function LivePage() {
     </div>
   );
 }
+

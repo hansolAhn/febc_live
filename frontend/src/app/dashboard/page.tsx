@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -9,15 +9,16 @@ import { PageHeader } from "@/components/PageHeader";
 import { SecurityEventTable } from "@/components/SecurityEventTable";
 import { StatCard } from "@/components/StatCard";
 import { useAuth } from "@/components/providers/AuthProvider";
+import { useAutoRefreshingPlaybackAccess } from "@/hooks/useAutoRefreshingPlaybackAccess";
 import * as mockApi from "@/lib/mock-api";
 
 type PlaybackAccess = Awaited<ReturnType<typeof mockApi.fetchPlaybackAccess>>;
 type StreamStatus = Awaited<ReturnType<typeof mockApi.fetchStreamStatus>>;
 
 function formatDateTime(value: string | null) {
-  if (!value) return "확인 전";
+  if (!value) return "확인 중";
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "확인 전";
+  if (Number.isNaN(date.getTime())) return "확인 중";
 
   return new Intl.DateTimeFormat("ko-KR", {
     year: "numeric",
@@ -51,7 +52,7 @@ function buildStatusMeta(playerState: PlaybackState, streamStatus: StreamStatus 
     return {
       label: "송출 중",
       className: "risk-badge risk-low",
-      message: "방송이 정상적으로 재생되고 있습니다."
+      message: "방송을 정상적으로 재생하고 있습니다."
     };
   }
 
@@ -61,14 +62,14 @@ function buildStatusMeta(playerState: PlaybackState, streamStatus: StreamStatus 
       className: "risk-badge risk-medium",
       message:
         streamStatus?.playbackAvailable || streamStatus?.isPublishing
-          ? "방송은 송출 중입니다. 재생 버튼을 눌러 모니터링할 수 있습니다."
+          ? "방송이 송출 중입니다. 재생 버튼을 눌러 모니터링할 수 있습니다."
           : "송출 상태를 확인하는 중입니다."
     };
   }
 
   if (playerState.status === "error") {
     return {
-      label: "재생 오류",
+      label: "?ъ깮 ?ㅻ쪟",
       className: "risk-badge risk-high",
       message: playerState.message
     };
@@ -83,7 +84,7 @@ function buildStatusMeta(playerState: PlaybackState, streamStatus: StreamStatus 
     return {
       label: "송출 중",
       className: "risk-badge risk-low",
-      message: "방송 송출은 정상입니다. 재생 버튼을 눌러 모니터링할 수 있습니다."
+      message: "방송 송출이 정상입니다. 재생 버튼을 눌러 모니터링할 수 있습니다."
     };
   }
 
@@ -114,6 +115,7 @@ export default function DashboardPage() {
 
   const requestedPreviewAccessRef = useRef(false);
   const hasLiveSignal = Boolean(streamStatus?.isPublishing || streamStatus?.playbackAvailable);
+  const accessToken = typeof window === "undefined" ? null : window.localStorage.getItem("febc_live_access_token");
 
   useEffect(() => {
     if (!user || !userId) return;
@@ -303,6 +305,20 @@ export default function DashboardPage() {
     };
   }, [dashboardWarmupSessionKey, hasLiveSignal, manualStartDelayMs, playbackAccess, roleCode]);
 
+  useAutoRefreshingPlaybackAccess({
+    enabled: roleCode === "SUPER_ADMIN" && hasLiveSignal && Boolean(playbackAccess),
+    accessToken,
+    playbackAccess,
+    onRefreshSuccess(nextAccess) {
+      requestedPreviewAccessRef.current = true;
+      setPlaybackAccess(nextAccess);
+      setPreviewError(null);
+    },
+    onRefreshError(message) {
+      setPreviewError(message);
+    }
+  });
+
   const previewMeta = useMemo(() => buildStatusMeta(previewState, streamStatus, previewError), [previewError, previewState, streamStatus]);
   const activeSessions = useMemo(
     () => sessions.filter((session) => session.status === "사용 중" || session.status === "접속 중"),
@@ -333,11 +349,13 @@ export default function DashboardPage() {
         <div className="panel dashboard-live-panel">
           <div className="panel-header-inline">
             <div className="panel-title">라이브 상태</div>
-            <span className={previewMeta.className}>{previewMeta.label}</span>
+            <div className="panel-status-group">
+              <span className={previewMeta.className}>{previewMeta.label}</span>
+            </div>
           </div>
           {previewAccess ? (
             <LivePlayer
-              key={`dashboard-preview-${playerRenderKey}-${previewAccess.expiresAt}`}
+              key={`dashboard-preview-${playerRenderKey}`}
               src={previewAccess.hlsUrl}
               branchName={user.branchName}
               username={user.username}
@@ -351,7 +369,7 @@ export default function DashboardPage() {
             />
           ) : (
             <div className="stack muted">
-            <div>{previewError ?? "라이브 미리보기를 준비하는 중입니다..."}</div>
+            <div>{previewError ?? "라이브 미리보기를 준비하고 있습니다..."}</div>
             </div>
           )}
         </div>
@@ -378,3 +396,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+
